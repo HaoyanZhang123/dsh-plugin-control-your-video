@@ -10,7 +10,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "rootDir": "src/host",
-    "outDir": "dist/host",
+    "outDir": "lib/host",
     "sourceMap": false,
     "declaration": false,
     "types": ["node"]

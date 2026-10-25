@@ -1,13 +1,13 @@
 # AI Video Studio v0.1 — 公共契约（冻结草案）
 
 > 状态：v0.1 实施期冻结；内部函数、组件拆分、局部数据结构不在此列。
-> 依据：`AI-Video-Studio-v0.1-完整实施计划.md` §5–§6；PoC-002 契约（命令/幂等/基线/原子提交）与 PoC-003（版本/快照/决定）已验证语义的正式化。
+> 依据：PoC-002／PoC-003 已验证的命令、幂等、版本、快照与决定语义；具体 DSH API 以当前安装版为准。
 
 ## 0. 版本
 
 | 项 | 值 |
 |---|---|
-| 插件包 | `ai-video-studio@0.1.11` |
+| 插件包 | `dsh-plugin-control-your-video@0.1.11` |
 | 状态 schema | `schema_version: 1`（JSON，每项目一份权威状态） |
 | 已验证 DSH | 0.2.1-rc.3 / win32 x64 |
 | 适配器 | `html-scene@1`（headless Chrome seek + FFmpeg，PoC-003 同源实现，非 HyperFrames 官方渲染器） |

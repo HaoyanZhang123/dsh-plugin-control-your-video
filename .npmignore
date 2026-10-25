@@ -1,0 +1,6 @@
+# package.json 的 files 白名单才是打包边界；本文件仅作说明。
+node_modules/
+dist/
+*.tgz
+.tmp/
+*.log

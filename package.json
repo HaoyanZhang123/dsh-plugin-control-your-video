@@ -1,25 +1,65 @@
 {
-  "name": "ai-video-studio",
+  "name": "dsh-plugin-control-your-video",
   "version": "0.1.11",
-  "private": true,
-  "license": "MIT",
-  "description": "AI Video Studio v0.1 local plugin (internal beta): projects, versions, decisions, jobs and a four-zone Workbench.",
+  "description": "DSH 内的 AI 视频创作工作台：项目、版本、认可、受管渲染与四区 Workbench",
   "type": "module",
-  "main": "dist/host/index.js",
+  "main": "lib/index.js",
   "exports": {
-    ".": "./dist/host/index.js",
-    "./client": "./dist/client/panel.js",
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
-    "dist",
+    "lib",
+    "src",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
-    "docs"
+    "docs",
+    "!**/__pycache__",
+    "!**/*.pyc"
   ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.0-0",
+    "@deepseek-ai/dsh-client-ui-sidebar": ">=0.2.0-0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test tests/",
+    "pack": "npm pack"
+  },
+  "license": "MIT",
+  "author": "HaoyanZhang123",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HaoyanZhang123/dsh-plugin-control-your-video.git"
+  },
+  "homepage": "https://github.com/HaoyanZhang123/dsh-plugin-control-your-video#readme",
+  "bugs": {
+    "url": "https://github.com/HaoyanZhang123/dsh-plugin-control-your-video/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "video",
+    "ai-video",
+    "workbench",
+    "studio"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dsh": {
-    "manifestVersion": 1,
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
@@ -30,16 +70,5 @@
         "@deepseek-ai/dsh-client-ui-sidebar"
       ]
     }
-  },
-  "scripts": {
-    "build": "node scripts/build.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test tests/",
-    "pack": "npm pack --pack-destination dist"
-  },
-  "devDependencies": {
-    "@types/node": "^26.6.5",
-    "esbuild": "^0.28.2",
-    "typescript": "^5.9.3"
   }
 }

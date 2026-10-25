@@ -6,11 +6,11 @@
  *   POST /studio/projects/:id/ui/intent
  * 前端不发送 principal，也不直接修改项目状态；主体由宿主按浏览器通道赋值。
  *
- * 契约依据：studio-plugin/docs/CONTRACTS.md §4（版本）、§5（决定）、§7（路由）、§9（能力降级）。
+ * 契约依据：docs/CONTRACTS.md §4（版本）、§5（决定）、§7（路由）、§9（能力降级）。
  * 面板结构：sidebar.panellist（id "studio"）→ main keyed slot（key "studio"）。
  */
 window.__ModuleLoader__.load({
-	id: "ai-video-studio",
+	id: "dsh-plugin-control-your-video",
 	factory: (require) => {
 		var module = { exports: {} }
 		var exports = module.exports

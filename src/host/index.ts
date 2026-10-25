@@ -5,7 +5,7 @@ import { ContractError, nowIso, type Principal } from './contract.js'
 import { ProjectStore, type State, type Version } from './store.js'
 import { detectCapabilities } from './capabilities.js'
 
-export const name = 'ai-video-studio'
+export const name = 'dsh-plugin-control-your-video'
 export const inject = ['webServer']
 
 interface StudioConfig { dataRoot: string; allowTestChannel?: boolean; publicBase?: string }

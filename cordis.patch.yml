@@ -1,7 +1,7 @@
-# AI Video Studio v0.1 bundle patch: one host row. The browser half ships through exports["./client"].
+# AI Video Studio bundle patch: one host row. The browser half ships through exports["./client"].
 - insert:
-    - id: studio
-      name: 'ai-video-studio'
+    - id: dsh-plugin-control-your-video
+      name: 'dsh-plugin-control-your-video'
       config:
         dataRoot: !!js process.env.STUDIO_DATA_ROOT || dshHomePath('studio-data')
         allowTestChannel: false

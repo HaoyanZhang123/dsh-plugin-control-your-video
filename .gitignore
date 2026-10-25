@@ -1,7 +1,8 @@
 node_modules/
 dist/
 *.tgz
-.env
-.env.*
+.tmp/
 *.log
+__pycache__/
+*.pyc
 .DS_Store

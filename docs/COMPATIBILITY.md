@@ -10,7 +10,7 @@
 | 生产运行时依赖 | 无第三方 npm 运行时依赖 | 仅 `node:*` 内建 |
 | 开发依赖 | typescript 5.9.3、esbuild 0.28.2、@types/node | 只在构建/测试使用，不进包 |
 | 状态 schema | `schema_version: 1` | 遇到更高版本拒绝读取（SCHEMA_UNSUPPORTED），不降级猜测 |
-| 包 | `ai-video-studio@0.1.11` | 由本仓库源码构建；发布包哈希在构建产物中生成，不写入源码仓库 |
+| 包 | `dsh-plugin-control-your-video@0.1.11` | 由本仓库源码构建；发布包哈希在构建产物中生成，不写入源码仓库 |
 
 ## 升级兼容
 

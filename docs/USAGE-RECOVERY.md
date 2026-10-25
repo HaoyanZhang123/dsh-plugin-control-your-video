@@ -4,7 +4,7 @@
 
 ```bash
 export DSH_HOME="<专用 profile home>"
-<DSH_CLI> plugin --profile ai-video-studio-dev add <ai-video-studio-0.1.11.tgz 的绝对路径>
+<DSH_CLI> plugin --profile dsh-plugin-control-your-video-dev add <dsh-plugin-control-your-video-0.1.11.tgz 的绝对路径>
 ```
 
 `<DSH_CLI>` 由你的 DSH 安装方式提供；本文不假定固定安装路径。
@@ -39,9 +39,9 @@ export DSH_HOME="<专用 profile home>"
 
 ```bash
 # 停用（从 profile 移除 bundle）
-dsh plugin --profile ai-video-studio-dev remove ai-video-studio
+dsh plugin --profile dsh-plugin-control-your-video-dev remove dsh-plugin-control-your-video
 # 回滚到旧版本
-dsh plugin --profile ai-video-studio-dev add <older>.tgz
+dsh plugin --profile dsh-plugin-control-your-video-dev add <older>.tgz
 ```
 
 项目数据不受停用影响；重新安装后仍可读。

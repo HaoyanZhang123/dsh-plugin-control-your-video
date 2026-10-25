@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { ProjectStore } from '../dist/host/store.js'
-import { ContractError } from '../dist/host/contract.js'
+import { ProjectStore } from '../lib/host/store.js'
+import { ContractError } from '../lib/host/contract.js'
 
 const root = () => mkdtempSync(path.join(tmpdir(), 'studio-test-'))
 const req = (kind, payload, extra = {}) => ({ principal: 'agent', channel: 'agent', command_id: extra.command_id ?? kind + '-' + Math.random(), base_revision: extra.base_revision ?? 0, kind, payload, target: extra.target ?? null, origin: { kind: 'tool_call' } })
