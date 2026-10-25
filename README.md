@@ -32,6 +32,10 @@ export DSH_HOME="<专用 profile home>"
 - `docs/USAGE-RECOVERY.md`：安装、使用、恢复、停用与回滚
 - `docs/COMPATIBILITY.md`：实测兼容矩阵与未验证项
 
+## License
+
+MIT License，见 [LICENSE](LICENSE)。
+
 ## 边界
 
 - 渲染适配为本机 headless Chrome + FFmpeg（非 HyperFrames 官方渲染器）。

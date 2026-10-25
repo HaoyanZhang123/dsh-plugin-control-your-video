@@ -2,6 +2,7 @@
   "name": "ai-video-studio",
   "version": "0.1.11",
   "private": true,
+  "license": "MIT",
   "description": "AI Video Studio v0.1 local plugin (internal beta): projects, versions, decisions, jobs and a four-zone Workbench.",
   "type": "module",
   "main": "dist/host/index.js",
@@ -14,6 +15,7 @@
     "dist",
     "cordis.patch.yml",
     "README.md",
+    "LICENSE",
     "docs"
   ],
   "dsh": {
