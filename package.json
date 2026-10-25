@@ -1,0 +1,43 @@
+{
+  "name": "ai-video-studio",
+  "version": "0.1.11",
+  "private": true,
+  "description": "AI Video Studio v0.1 local plugin (internal beta): projects, versions, decisions, jobs and a four-zone Workbench.",
+  "type": "module",
+  "main": "dist/host/index.js",
+  "exports": {
+    ".": "./dist/host/index.js",
+    "./client": "./dist/client/panel.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "README.md",
+    "docs"
+  ],
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test tests/",
+    "pack": "npm pack --pack-destination dist"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
+  }
+}
