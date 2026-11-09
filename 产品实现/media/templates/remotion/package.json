@@ -1,0 +1,8 @@
+{
+  "name": "c12-remotion-unit",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "C12 MIT template: renders one CompositionPlan with Remotion. Dependencies come from the managed render workspace, not from this package.",
+  "license": "MIT"
+}
