@@ -14,7 +14,9 @@
     "./base/*": "./base/*.js",
     "./core/project": "./core/project/index.js",
     "./tools": "./tools/index.js",
-    "./media": "./media/index.js"
+    "./media": "./media/index.js",
+    "./orchestration": "./orchestration/index.js",
+    "./editing": "./editing/index.js"
   },
   "files": [
     "ui/host",
@@ -22,14 +24,16 @@
     "ui/plugin",
     "core/project/*.js",
     "tools/*.js",
+    "media/*.js",
+    "media/render",
+    "media/ops",
+    "orchestration/*.js",
+    "editing/*.js",
     "base",
     "docs",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE",
-    "media/*.js",
-    "media/render",
-    "media/ops"
+    "LICENSE"
   ],
   "engines": {
     "node": ">=24.21.0 <25",

@@ -35,7 +35,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
 
 /** Directories that are product source and therefore fully checked. */
-const PRODUCT_DIRS = ['base', 'scripts', 'core', 'tools', 'media']
+const PRODUCT_DIRS = ['base', 'scripts', 'core', 'tools', 'media', 'orchestration', 'editing']
 
 /** Directories skipped entirely. */
 const SKIP_DIRS = new Set(['node_modules', '.git', 'evidence', 'tests', 'docs'])
