@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "note": "手写准入清单：C04 独占维护。build.mjs、static-check.mjs、deps-report.mjs 只读本文件，任何脚本都不得写入本文件。",
+  "whyThisExists": "此前准入判定从 docs/DEPENDENCY-LEDGER.md 的任意表格行解析，导致边界分类表里的 with-pack／host-provided 等词被当成已准入包名；且 deps-report 会重写该台账，形成自清除循环。改为独立只读清单后，准入事实只有一处来源。",
+  "admitted": []
+}
