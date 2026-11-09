@@ -1,0 +1,46 @@
+# 研究语料与第三方内容：不随仓库发布
+已确认资产/
+.review-dsh-drawai/
+
+# 本地验证实验场（含外部运行时、Chrome、第三方 node_modules）
+RENDER-LAB/
+
+# 内部过程文档：产品实现之外的一切规划、任务卡、回执与证据都不发布
+实施交接/
+审阅记录/
+提示词/
+规划公共状态与交接.md
+需求共识-v1.md
+工作台需求探讨大纲与启动提示词.md
+产品使用与完整流程蓝图.md
+整体产品框架与建设计划.md
+UI与交互蓝图.md
+创作方法-工具-资产映射.md
+严格MIT执行栈与重实现清单.md
+
+# 第三方提取文档与临时宿主（含会话数据，绝不发布）
+产品实现/ui/dev/_refs/
+产品实现/ui/dev/_tmp*/
+产品实现/ui/dev/*.log
+产品实现/ui/design-drafts/
+
+# 生成物与可重建证据
+产品实现/evidence/
+产品实现/media/evidence/
+产品实现/node_modules/
+node_modules/
+**/node_modules/
+
+# 仓库根的散落生成物与脚手架
+gen-composition.mjs
+.commit-plan.sh
+.rebuild-history.sh
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.tmp
+.idea/
+.vscode/
