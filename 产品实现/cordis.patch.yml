@@ -1,0 +1,30 @@
+# cordis.patch.yml — composition layer for the AI video workbench plugin.
+#
+# This file is owned by C04 (root build config) and is declared in package.json as
+# `dsh.bundle.patch`. It is intentionally an EMPTY LIST for now.
+#
+# Why an empty list, and not a comment-only file: the Host terminates startup when this
+# layer is empty or contains only comments, and documents `[]` as the supported way to
+# disable the layer (C01 evidence: `dsh-app-boot` README, patch layer rules). An empty
+# list therefore means "this bundle contributes no Loader rows yet" while keeping the
+# package loadable-by-shape.
+#
+# Do NOT add a row here until the target module actually exists. A row that names a
+# package with no resolvable entry point fails at Host import time.
+#
+# The Host half (lib/index.js) and client half (lib/client.js) are delivered by later
+# cards. When a real host entry exists, the row to add is:
+#
+#   - insert:
+#       - id: ai-video-workbench
+#         name: 'dsh-plugin-control-your-video'
+#
+# Root-file changes are C04's: any change here goes through 总控, not a leaf card.
+#
+# C11 (2026-11-08, user-authorized minimal change): the Host half and client half now exist at
+# `ui/plugin/host.js` and `ui/plugin/client.js`, so the documented row below is enabled. The row's
+# name must equal the package name: `dsh-client-modules` mounts the browser half only on the row
+# whose specifier is the package name (C01 A-6).
+- insert:
+    - id: ai-video-workbench
+      name: dsh-plugin-control-your-video
