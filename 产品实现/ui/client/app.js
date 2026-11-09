@@ -128,10 +128,13 @@ const COMPONENTS = Object.freeze({
 function registerShellAdditions(ctx) {
   const disposeStyle = ensureStyle()
   const domain = registerCreationDomain(ctx)
+  const review = registerReviewDomain(ctx)
   // Evidence hook: the isolation walkthrough reads this to prove the registration is STATED.
   if (typeof window !== 'undefined') window.__avwCreationDomain = domain.status
+  if (typeof window !== 'undefined') window.__avwReviewDomain = review.status
   return () => {
     domain.dispose()
+    review.dispose()
     disposeStyle()
   }
 }
@@ -151,6 +154,12 @@ const AVW_PLUGIN = {
     CREATION_DOMAIN_REGISTRY,
     registerCreationDomain,
     newestProjection,
+    ReviewDomainView,
+    ReviewDomainSection,
+    REVIEW_DOMAIN_REGISTRY,
+    registerReviewDomain,
+    newestEditingProjection,
+    ReviewDomainMount,
   },
   apply(ctx) {
     ctx.effect(() => registerShellAdditions(ctx), 'ai-video-workbench: design system stylesheet')

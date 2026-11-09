@@ -40,6 +40,8 @@ const SOURCES = [
   'client/ui.js',
   'client/domains/creation/view.js',
   'client/domains/creation/index.js',
+  'client/domains/review/view.js',
+  'client/domains/review/index.js',
   'client/hooks.js',
   'client/actions.js',
   'client/views/home.js',

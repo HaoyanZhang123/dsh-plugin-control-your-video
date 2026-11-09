@@ -1499,7 +1499,7 @@ function BriefBucket(props) {
  * @param {any} [props.projection] the newest `creation.projection` payload
  * @param {string} [props.error] why the projection could not be read
  * @param {boolean} [props.loading]
- * @param {string} [props.notice] a standing note, e.g. "面位待总控裁定"
+ * @param {string} [props.notice] a standing note, e.g. "只读投影：数据来自项目事件流"
  */
 function CreationDomainView(props) {
   const projection = props.projection ?? null
@@ -1678,7 +1678,7 @@ function CreationDomainSection() {
     loading: read.loading,
     projection: read.projection,
     error: read.error,
-    notice: '本视图面位待总控裁定；当前不占用导航入口。',
+    notice: '只读投影：数据来自项目事件流；要改项目事实请回到已有编辑入口。',
   })
 }
 
@@ -1704,6 +1704,433 @@ function registerCreationDomain(ctx) {
       if (CREATION_DOMAIN_REGISTRY.component === CreationDomainSection) {
         CREATION_DOMAIN_REGISTRY.component = null
         CREATION_DOMAIN_REGISTRY.mountedAt = null
+      }
+    },
+  }
+}
+
+/* ---- client/domains/review/view.js ---- */
+/**
+ * Review domain view: a read-only projection of candidates, comparisons, annotations, partial
+ * confirmations, direct-edit sessions, AI requests and creative history.
+ *
+ * This component is PURE on purpose: it takes a projection (or an error) and renders it, so the same
+ * code can be mounted by the shell and rendered with real project data in evidence. It reads
+ * `editing.projection`, the summary C14 publishes into the project's event stream — it never invents
+ * data, never writes anything and never draws an enabled button for a capability that is not wired.
+ *
+ * The body is built as named sections instead of one deeply nested call, so a missing parenthesis
+ * cannot silently turn later sections into discarded comma operands.
+ *
+ * @module ui/client/domains/review/view
+ */
+
+/** Candidate status label and tone. */
+const CANDIDATE_STATUS = Object.freeze({
+  open: { label: '未决定', tone: 'warn' },
+  'needs-recheck': { label: '基础版本已变，需重核', tone: 'danger' },
+  accepted: { label: '已接受为当前', tone: 'ok' },
+  rejected: { label: '已否定', tone: 'default' },
+  superseded: { label: '已取代', tone: 'default' },
+})
+
+/** Confirmation state label and tone. */
+const CONFIRM_STATE = Object.freeze({
+  'partially-confirmed': { label: '部分确认', tone: 'warn' },
+  confirmed: { label: '已确认', tone: 'ok' },
+  'changed-after-confirmation': { label: '确认后有改动，需重核', tone: 'danger' },
+  'ai-allowed': { label: 'AI 自主（未经你审阅）', tone: 'warn' },
+})
+
+/** Session status label. */
+const SESSION_STATUS = Object.freeze({
+  open: '修改中',
+  'candidate-formed': '已形成候选',
+  accepted: '已接受',
+  abandoned: '已放弃',
+})
+
+/** Request status label. */
+const REQUEST_STATUS = Object.freeze({
+  'needs-user': '待用户确认方向',
+  planned: '已声明，待派发',
+  dispatched: '已交给原制作子 Agent',
+  returned: '已返回候选',
+  failed: '失败（原版保留）',
+  cancelled: '已取消',
+})
+
+/** One section frame in the workbench card rhythm. */
+function ReviewSection(props) {
+  return h('section', { className: 'avw-card', style: { marginBottom: '10px' } },
+    h('div', { className: 'avw-card__head' },
+      h('span', { className: 'avw-card__title' }, props.title),
+      props.note ? h('span', { className: 'avw-card__note' }, props.note) : null,
+      h('span', { className: 'avw-grow' })),
+    h('div', { className: 'avw-card__body', style: { display: 'grid', gap: '6px' } }, props.children))
+}
+
+/** Small chip matching the design system. */
+function ReviewChip(props) {
+  return h('span', { className: `avw-chip${props.tone ? ` avw-chip--${props.tone}` : ''}` }, props.text)
+}
+
+/** Two-column key/value row. */
+function ReviewKV(props) {
+  return h('div', { className: 'avw-kv' },
+    h('label', null, props.label),
+    h('span', { style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' } }, props.children))
+}
+
+/** A short honest sentence, used instead of an unimplemented control. */
+function Hint(props) {
+  return h('span', { className: 'avw-hint' }, props.text)
+}
+
+/** @param {any} range */
+function rangeText(range) {
+  if (range === null || range === undefined) return '—'
+  return `[${range.startFrame}, ${range.endFrameExclusive})`
+}
+
+/** @param {any[]} frames */
+function changedFramesText(frames) {
+  if (!Array.isArray(frames) || frames.length === 0) return '—'
+  return frames
+    .map((entry) => `[${entry.startFrame}, ${entry.endFrameExclusive}) ${entry.reason ?? ''}`.trim())
+    .join('；')
+}
+
+/** @param {any} props */
+function CurrentSection(props) {
+  const current = props.current
+  const production = props.production
+  const summary = props.summary
+  return h(ReviewSection, { title: '当前状态', note: `候选 ${summary.liveCandidates ?? 0} 个未结束` },
+    h(ReviewKV, { label: '当前版本' },
+      h('span', null, current === null ? '还没有当前版本' : `${current.label} · ${current.versionId}`),
+      current === null || current.planVersion === null
+        ? null
+        : h('span', { className: 'avw-mono' }, `计划 ${current.planVersion}`)),
+    h(ReviewKV, { label: '制作状态' },
+      h(ReviewChip, {
+        text: production.editable === true ? '可进行实际修改' : '先暂停／先核对',
+        tone: production.editable === true ? 'ok' : 'warn',
+      }),
+      h(Hint, { text: production.reason ?? (production.execution ? `执行 ${production.execution}` : '') })),
+    h(Hint, { text: '直接修改与 AI 修改共用同一写入锁、候选与恢复机制；修改形成候选，不覆盖当前版。' }))
+}
+
+/** @param {any} props */
+function CandidatesSection(props) {
+  const candidates = props.candidates
+  const rows = candidates.length === 0
+    ? h(Hint, { text: '还没有候选。直接修改会形成候选；AI 复杂修改由原制作子 Agent 返回真实候选。' })
+    : candidates.map((candidate) => {
+      const status = CANDIDATE_STATUS[candidate.status] ?? { label: candidate.status, tone: 'default' }
+      return h(ReviewKV, { key: candidate.candidateId, label: `候选 ${candidate.createdBy}` },
+        h('span', null, candidate.target ?? '—'),
+        h(ReviewChip, { text: status.label, tone: status.tone }),
+        h('span', { className: 'avw-hint' },
+          `基础 ${candidate.baseVersionId} · 范围 ${candidate.scope ?? '—'} · 保留 ${candidate.preservedItems?.length ?? 0} 项`),
+        candidate.previewAvailable === false
+          ? h(ReviewChip, { text: '缺真实预览', tone: 'warn' })
+          : h(ReviewChip, { text: '有真实预览', tone: 'ok' }),
+        candidate.recheckRequired === true
+          ? h('span', { className: 'avw-hint' }, `需要重核：${candidate.recheckReason ?? '基础版本已变化'}`)
+          : null)
+    })
+  return h(ReviewSection, { title: '候选与新修改', note: `${candidates.length} 个` },
+    rows,
+    h(Hint, { text: '接受候选 ≠ 整片验收 ≠ 效果沉淀；部分采用会形成新候选并重新检查依赖。' }))
+}
+
+/** @param {any} props */
+function ComparisonsSection(props) {
+  const comparisons = props.comparisons
+  const rows = comparisons.length === 0
+    ? h(Hint, { text: '还没有对照记录。' })
+    : comparisons.map((comparison) => h(ReviewKV, { key: comparison.comparisonId, label: '对照' },
+      h(ReviewChip, {
+        text: comparison.realComparison ? '真实媒体对照' : '只有计划差异',
+        tone: comparison.realComparison ? 'ok' : 'warn',
+      }),
+      h('span', { className: 'avw-hint' },
+        `方式 ${Array.isArray(comparison.modes) ? comparison.modes.join(' / ') : '—'} · 变化对象 ${comparison.changedObjectIds?.length ?? 0} 个`),
+      h(Hint, { text: changedFramesText(comparison.changedFrames) }),
+      comparison.changedFieldsByObject
+        ? h(Hint, {
+          text: Object.entries(comparison.changedFieldsByObject)
+            .map(([objectId, fields]) => `${objectId}: ${fields.join('、')}`)
+            .join('；'),
+        })
+        : null,
+      comparison.missingPreviewReason ? h(Hint, { text: comparison.missingPreviewReason }) : null,
+      comparison.wholeFilmRequired === true
+        ? h(ReviewChip, { text: '需要看整片影响', tone: 'warn' })
+        : null))
+  return h(ReviewSection, { title: '新旧对照', note: `${comparisons.length} 条` }, rows)
+}
+
+/** @param {any} props */
+function AnnotationsSection(props) {
+  const annotations = props.annotations
+  const rows = annotations.length === 0
+    ? h(Hint, { text: '还没有批注。批注会绑定对象、方面、范围与版本；旧引用保留当时对象快照。' })
+    : annotations.map((annotation) => h(ReviewKV, { key: annotation.annotationId, label: annotation.aspect },
+      h('span', null, annotation.body ?? ''),
+      h(ReviewChip, {
+        text: annotation.objectId === 'movie' ? '整片' : annotation.objectId,
+        tone: 'accent',
+      }),
+      annotation.range === null ? null : h('span', { className: 'avw-mono' }, rangeText(annotation.range)),
+      h('span', { className: 'avw-hint' }, `版本 ${annotation.versionId} · ${annotation.status}`),
+      annotation.planVerified === false ? h(ReviewChip, { text: '版本计划未核', tone: 'warn' }) : null,
+      annotation.flattened === true ? h(ReviewChip, { text: '压平视频：只到片段／区域', tone: 'warn' }) : null))
+  return h(ReviewSection, { title: '对象批注', note: `${annotations.length} 条` }, rows)
+}
+
+/** @param {any} props */
+function ConfirmationsSection(props) {
+  const confirmations = props.confirmations
+  const rows = confirmations.length === 0
+    ? h(Hint, { text: '还没有局部确认记录。' })
+    : confirmations.map((confirmation) => {
+      const state = CONFIRM_STATE[confirmation.state] ?? { label: confirmation.state, tone: 'default' }
+      return h(ReviewKV, { key: confirmation.confirmationId, label: confirmation.objectId },
+        h('span', null, confirmation.aspect),
+        h(ReviewChip, { text: state.label, tone: state.tone }),
+        h('span', { className: 'avw-hint' }, `范围 ${confirmation.scope} · 版本 ${confirmation.versionId}`),
+        confirmation.humanResponse ? h(Hint, { text: `你的话：${confirmation.humanResponse}` }) : null,
+        confirmation.wholeFilm === true ? h(ReviewChip, { text: '整片范围', tone: 'danger' }) : null)
+    })
+  return h(ReviewSection, { title: '局部确认', note: '不等于整片验收' }, rows)
+}
+
+/** @param {any} props */
+function SessionsSection(props) {
+  const sessions = props.sessions
+  const requests = props.requests
+  const sessionRows = sessions.map((session) => h(ReviewKV, { key: session.sessionId, label: '直接修改' },
+    h('span', null, session.target ?? '—'),
+    h(ReviewChip, {
+      text: SESSION_STATUS[session.status] ?? session.status,
+      tone: session.status === 'candidate-formed' ? 'ok' : session.status === 'open' ? 'warn' : 'default',
+    }),
+    h('span', { className: 'avw-hint' },
+      `基础 ${session.baseVersionId} · 步骤 ${session.steps}${session.steps > 1 ? ` · 可撤销 ${session.canUndo}｜可重做 ${session.canRedo}` : ''}`),
+    h('span', { className: 'avw-hint' },
+      `预览：${session.previewState === 'fresh' ? '当前' : session.previewState === 'missing' ? '尚无真实预览' : '已过期，需重渲'}`)))
+  const requestRows = requests.map((request) => h(ReviewKV, { key: request.requestId, label: 'AI 修改' },
+    h('span', null, request.target ?? '—'),
+    h(ReviewChip, {
+      text: REQUEST_STATUS[request.status] ?? request.status,
+      tone: request.status === 'returned'
+        ? 'ok'
+        : request.status === 'needs-user'
+          ? 'warn'
+          : request.status === 'failed'
+            ? 'danger'
+            : 'default',
+    }),
+    h('span', { className: 'avw-hint' },
+      `基础 ${request.baseVersionId}${request.producerSessionId ? ` · 原制作子 Agent ${request.producerSessionId}` : ''}`),
+    request.pausedProduction?.changed === true
+      ? h(Hint, { text: '派发前已暂停制作' })
+      : null,
+    request.result?.knownIssues?.length > 0
+      ? h(Hint, { text: `已知问题：${request.result.knownIssues.join('；')}` })
+      : null,
+    request.failure ? h(Hint, { text: `失败：${request.failure.reason} · 原版保留` }) : null))
+  const body = sessions.length === 0 && requests.length === 0
+    ? h(Hint, { text: '还没有修改会话。' })
+    : h(React.Fragment, null, sessionRows, requestRows)
+  return h(ReviewSection, { title: '修改过程', note: `${sessions.length} 个直接会话 · ${requests.length} 个 AI 请求` }, body)
+}
+
+/** @param {any} props */
+function HistorySection(props) {
+  const history = props.history
+  const entries = history.entries ?? []
+  const rows = entries.length === 0
+    ? h(Hint, { text: '没有可显示的创作期历史。' })
+    : entries.map((entry) => h(ReviewKV, { key: `${entry.kind}-${entry.versionId}`, label: entry.kind },
+      h('span', null, entry.label ?? entry.status ?? ''),
+      h(ReviewChip, { text: entry.class, tone: entry.active ? 'ok' : 'default' }),
+      h('span', { className: 'avw-hint' }, `${entry.createdBy ?? ''} · ${entry.createdAt ?? ''}`),
+      entry.revertEligible === true
+        ? h(ReviewChip, { text: '可回退（成为当前版本）', tone: 'accent' })
+        : h('span', { className: 'avw-hint' }, entry.revertReason ?? '只读查看')))
+  return h(ReviewSection, { title: '创作期历史与回退', note: '只读' },
+    rows,
+    h(Hint, { text: '历史只读；回退成为当前版本，旧当前版保留。局部回退只形成候选。' }))
+}
+
+/** @param {any} props */
+function HonestGap(props) {
+  return h('div', { className: 'avw-gap' },
+    h('b', null, '仍未接入：可点操作与真实交互'),
+    h('div', null, '领域视图已画入项目页“批注”面板（只读）。接受、退回、重新渲染等可点操作尚未接通交互，这里不画假按钮。'),
+    h(Hint, { text: props.honest.note ?? '' }),
+    h(Hint, { text: 'AI 看／听：未看、未听；程序检查不等于用户验收。' }))
+}
+
+/**
+ * The whole review domain view.
+ *
+ * @param {object} props
+ * @param {any} [props.projection] the newest `editing.projection` payload
+ * @param {string} [props.error] why the projection could not be read
+ * @param {boolean} [props.loading]
+ * @param {string} [props.notice]
+ */
+function ReviewDomainView(props) {
+  const projection = props.projection ?? null
+  const header = h('div', { className: 'avw-card__head' },
+    h('span', { className: 'avw-card__title' }, '审阅、修改与回退（只读投影）'),
+    h(ReviewChip, { text: '只读', tone: 'accent' }),
+    h('span', { className: 'avw-grow' }),
+    h('span', { className: 'avw-card__note' },
+      projection === null ? '等待投影' : `来源：项目事件 · ${projection.generatedAt}`))
+
+  if (props.loading === true) {
+    return h('div', { className: 'avw-card' }, header,
+      h('div', { className: 'avw-card__body' }, h(Hint, { text: '正在读取项目事件…' })))
+  }
+  if (typeof props.error === 'string' && props.error.length > 0) {
+    return h('div', { className: 'avw-card' }, header,
+      h('div', { className: 'avw-card__body' },
+        h('span', { className: 'avw-chip avw-chip--warn' }, '需要处理'),
+        h(Hint, { text: props.error })))
+  }
+  if (projection === null) {
+    return h('div', { className: 'avw-card' }, header,
+      h('div', { className: 'avw-card__body' },
+        h(Hint, { text: '这个项目还没有审阅投影。投影由编辑模块在事实变化后发布，界面不会凭空造一份。' }),
+        props.notice ? h(Hint, { text: props.notice }) : null))
+  }
+
+  return h('div', { className: 'avw-review-domain', id: 'avw-review-domain' },
+    header,
+    h(CurrentSection, {
+      current: projection.current ?? null,
+      production: projection.production ?? {},
+      summary: projection.summary ?? {},
+    }),
+    h(CandidatesSection, { candidates: projection.candidates ?? [] }),
+    h(ComparisonsSection, { comparisons: projection.comparisons ?? [] }),
+    h(AnnotationsSection, { annotations: projection.annotations ?? [] }),
+    h(ConfirmationsSection, { confirmations: projection.confirmations ?? [] }),
+    h(SessionsSection, {
+      sessions: projection.sessions ?? [],
+      requests: projection.requests ?? [],
+    }),
+    h(HistorySection, { history: projection.history ?? { entries: [] } }),
+    h(HonestGap, { honest: projection.honest ?? {} }))
+}
+
+/* ---- client/domains/review/index.js ---- */
+/**
+ * Mounting and registration of the review domain view.
+ *
+ * The view reads ONE thing: the newest `editing.projection` in the project's own event stream,
+ * through the route the workbench already exposes. No new host route, no second fact source.
+ *
+ * Registration is deliberately a shell-held registry and not a new panel or navigation entry: the
+ * surface decision belongs to C11/总控, and pushing a slot into `apply` would change the shell's
+ * declared slot set behind that decision's back. A refused registration would be reported as
+ * `registered: false` instead of hidden, because a view that silently does not exist is worse than
+ * one that says so.
+ *
+ * @module ui/client/domains/review/index
+ */
+
+/** The shell-held registry this domain registers into. */
+const REVIEW_DOMAIN_REGISTRY = { component: null, mountedAt: null }
+
+/** The client-side matcher for the projection event kind C14 publishes. */
+const EDITING_PROJECTION_KIND = 'editing.projection'
+
+/**
+ * Find the newest editing projection in a list of project events.
+ * @param {any[]} events
+ * @returns {any|null}
+ */
+function newestEditingProjection(events) {
+  if (!Array.isArray(events)) return null
+  let latest = null
+  let latestSequence = -1
+  for (const event of events) {
+    if (event?.kind !== EDITING_PROJECTION_KIND) continue
+    if (event.detail === null || typeof event.detail !== 'object') continue
+    // `/projects/events` answers newest-first; the sequence, not the array position, decides.
+    const sequence = Number.isInteger(event.sequence) ? event.sequence : Number.MAX_SAFE_INTEGER
+    if (sequence >= latestSequence) {
+      latestSequence = sequence
+      latest = event.detail
+    }
+  }
+  return latest
+}
+
+/** The section the shell renders once it has a mounting surface. */
+function ReviewDomainSection() {
+  const state = useStoreState()
+  const projectId = state.projectId ?? state.project?.project?.projectId ?? null
+  const [read, setRead] = React.useState({ loading: projectId !== null, projection: null, error: null })
+
+  React.useEffect(() => {
+    if (projectId === null) {
+      setRead({ loading: false, projection: null, error: null })
+      return undefined
+    }
+    let cancelled = false
+    setRead((current) => ({ ...current, loading: true }))
+    Api.events(projectId, 200)
+      .then((payload) => {
+        if (cancelled) return
+        const events = Array.isArray(payload) ? payload : (payload?.events ?? [])
+        setRead({ loading: false, projection: newestEditingProjection(events), error: null })
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setRead({ loading: false, projection: null, error: `读取项目事件失败：${error?.message ?? error}` })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId])
+
+  return h(ReviewDomainView, {
+    loading: read.loading,
+    projection: read.projection,
+    error: read.error,
+    notice: '只读投影：数据来自项目事件流；接受、退回等操作要以真实交互接入后才出现。',
+  })
+}
+
+/**
+ * Set the review domain into the shell registry, once, through an effect the shell can dispose.
+ *
+ * @param {any} ctx the Host plugin context
+ * @returns {{ status: {mode: string, registered: boolean, reason: string|null}, dispose: () => void }}
+ */
+function registerReviewDomain(ctx) {
+  const status = { mode: 'shell-registry', registered: false, reason: null }
+  if (ctx === null || typeof ctx !== 'object') {
+    status.reason = '没有 Host 上下文'
+    return { status, dispose: () => {} }
+  }
+  REVIEW_DOMAIN_REGISTRY.component = ReviewDomainSection
+  REVIEW_DOMAIN_REGISTRY.mountedAt = new Date().toISOString()
+  status.registered = true
+  return {
+    status,
+    dispose: () => {
+      // Disposing removes THIS registration and nothing else; a later registration is untouched.
+      if (REVIEW_DOMAIN_REGISTRY.component === ReviewDomainSection) {
+        REVIEW_DOMAIN_REGISTRY.component = null
+        REVIEW_DOMAIN_REGISTRY.mountedAt = null
       }
     },
   }
@@ -2492,6 +2919,27 @@ function MaterialProperties(props) {
       h('p', { className: 'avw-hint' }, '材料由 C10 保存与校验；预览画面、时间对象和渲染由 C12 接入。')))
 }
 
+/**
+ * Mount whatever the review domain registered, in the project page's notes tab.
+ *
+ * The domain view is a self-contained component (its own store read + event fetch), so mounting it
+ * here adds no panel, no slot and no effect — the shell's four entries stay four. When nothing is
+ * registered the mount says so instead of drawing an empty review that looks operational.
+ */
+function ReviewDomainMount() {
+  const registry = typeof REVIEW_DOMAIN_REGISTRY === 'object' && REVIEW_DOMAIN_REGISTRY !== null
+    ? REVIEW_DOMAIN_REGISTRY
+    : { component: null }
+  if (typeof registry.component !== 'function') {
+    return h('div', { className: 'avw-card', id: 'avw-review-domain', style: { marginTop: '8px' } },
+      h('div', { className: 'avw-card__head' }, h('span', { className: 'avw-card__title' }, '审阅、修改与回退')),
+      h('div', { className: 'avw-card__body' },
+        h('p', { className: 'avw-hint', style: { margin: 0 } }, '审阅领域视图没有注册：这里不显示任何数据，也不画假按钮。')))
+  }
+  const Registered = registry.component
+  return h('div', { id: 'avw-review-domain', style: { marginTop: '8px' } }, h(Registered))
+}
+
 function ProjectProperties(props) {
   const project = props?.project ?? null
   if (!project) return null
@@ -2507,7 +2955,7 @@ function ProjectProperties(props) {
       h(KV, { label: '目录', value: project.paths?.projectDir ?? '—', title: project.paths?.projectDir })),
     h('div', { className: 'avw-prop' },
       h('h4', null, '确认与保护'),
-      h('p', { className: 'avw-hint' }, '确认绑定对象、方面、范围与版本；候选与局部回退由 C14 接入。'),
+      h('p', { className: 'avw-hint' }, '确认绑定对象、方面、范围与版本；候选、对照与回退在“批注”面板的审阅视图里只读查看，接受／回退交互尚未接入。'),
       h('p', { className: 'avw-hint' }, '重要决定可以从“版本”里按时间与对象重新找到。')))
 }
 
@@ -2519,16 +2967,15 @@ function NotesPane(props) {
       state.selection
         ? h('p', { className: 'avw-hint' }, `当前对象：${state.selection.label ?? state.selection.objectId}`)
         : h('p', { className: 'avw-hint' }, '先在结构或材料里选中一个对象。'),
-      h(GapCard, {
-        gap: INTEGRATION_GAPS.review,
-        action: h(Btn, {
+      h('div', { style: { marginTop: '6px' } },
+        h(Btn, {
           size: 'sm',
           onClick: () => Actions.setRightTab('assistant'),
-        }, '把意见发到助手'),
-      })),
+        }, '把意见发到助手'))),
+    h(ReviewDomainMount),
     h('div', { className: 'avw-prop' },
       h('h4', null, '按对象查看讨论'),
-      h('p', { className: 'avw-hint' }, '讨论按对象、版本和事项归档；聊天不是唯一事实源。C14 接入后这里会显示真实批注。')))
+      h('p', { className: 'avw-hint' }, '讨论按对象、版本和事项归档；聊天不是唯一事实源。上方审阅视图显示真实批注、候选与历史（只读）。')))
 }
 
 function AssistantPane(props) {
@@ -2627,7 +3074,7 @@ function VersionDialog(props) {
   const project = state.project
   return h(Modal, { open: props.open, title: '版本与记录', onClose: props.onClose },
     h('p', { className: 'avw-hint', style: { marginTop: 0 } },
-      `当前修订 ${shortRevision(project?.revision)}。创作期有当前／候选／定稿三类版本；候选与对照由 C14 接入。`),
+      `当前修订 ${shortRevision(project?.revision)}。创作期有当前／候选／定稿三类版本；候选、对照与回退在“批注”面板的审阅视图里只读查看。`),
     h('div', { style: { maxHeight: '320px', overflow: 'auto', border: '1px solid var(--avw-line)', borderRadius: '3px' } },
       events.length === 0
         ? h('div', { style: { padding: '16px', color: 'var(--avw-text-3)', fontSize: '11.5px' } }, '这个项目还没有可显示的事件。')
@@ -2641,7 +3088,8 @@ function VersionDialog(props) {
         h('span', { className: 'avw-hint' }, event.objectId ? `对象 ${event.objectId}` : '')))),
     h('div', { style: { marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' } },
       h(Chip, { tone: 'ok', dot: true }, '自动保存由 C10 负责'),
-      h(Chip, { tone: 'warn' }, '候选与回退：C14 接入中')))
+      h(Chip, { tone: 'ok' }, '审阅视图：已接入（只读）'),
+      h(Chip, { tone: 'warn' }, '接受／回退按钮：未接入')))
 }
 
 function CreateDialog(props) {
@@ -2841,8 +3289,9 @@ function CreationLeftContent() {
         material.originalFilename,
         h('span', { className: 'meta' }, `${MATERIAL_OBSERVATION_LABELS[material.observation] ?? material.observation} · ${uses.filter((use) => use.materialId === material.materialId).length} 用`)))),
     h(CreationLeftSection, { title: '方向与方案' },
-      h('div', { className: 'avw-tree-item', style: { color: 'var(--avw-text-3)', cursor: 'default' } },
-        h(Icon, { name: 'layers' }), '方向、方案、单元由 C13 接入')),
+      h('button', { type: 'button', className: 'avw-tree-item', onClick: () => scrollToSection('avw-creation-domain') },
+        h(Icon, { name: 'layers' }), '创建领域视图（只读）',
+        h('span', { className: 'meta' }, '已接入'))),
     h('div', { style: { padding: '6px 8px' } },
       h('p', { className: 'avw-hint' }, '这里显示真实对象；没有的就不画。')))
 }
@@ -2892,9 +3341,9 @@ function BriefSection() {
   return h('div', { className: 'avw-card', id: 'avw-brief' },
     h('div', { className: 'avw-card__head' },
       h('span', { className: 'avw-card__title' }, '可编辑简报'),
-      h(Chip, { tone: 'accent' }, '真实保存到项目'),
+      h(Chip, { tone: 'warn' }, '界面草稿（未迁移到项目事实）'),
       h('span', { className: 'avw-grow' }),
-      h('span', { className: 'avw-card__note' }, '自动保存')),
+      h('span', { className: 'avw-card__note' }, '本地草稿自动保存；项目事实里的只读简报见下方创建领域视图')),
     h('div', { className: 'avw-card__body', style: { display: 'grid', gap: '9px' } },
       fields.map((field) => h('div', { key: field.id, className: `avw-brief avw-brief--${field.id}` },
         h('div', { className: 'avw-brief-label' },
@@ -2943,6 +3392,26 @@ function MaterialsSection() {
         h('span', { className: 'avw-hint', style: { margin: 0 } }, '未读、不可读、未观察会分别标出来；预览画面由 C12 接入。'))))
 }
 
+/**
+ * Mount whatever the creation domain registered, or say plainly that nothing is registered.
+ *
+ * The domain view is a self-contained component (its own store read + event fetch), so mounting it
+ * here adds no panel, no slot and no effect — the shell's four entries stay four.
+ */
+function CreationDomainMount() {
+  const registry = typeof CREATION_DOMAIN_REGISTRY === 'object' && CREATION_DOMAIN_REGISTRY !== null
+    ? CREATION_DOMAIN_REGISTRY
+    : { component: null }
+  if (typeof registry.component !== 'function') {
+    return h('div', { className: 'avw-card', id: 'avw-creation-domain', style: { marginTop: '14px' } },
+      h('div', { className: 'avw-card__head' }, h('span', { className: 'avw-card__title' }, '创建领域视图')),
+      h('div', { className: 'avw-card__body' },
+        h('p', { className: 'avw-hint', style: { margin: 0 } }, '领域视图没有注册：宿主没有提供注册表，所以这里不显示任何数据。')))
+  }
+  const Registered = registry.component
+  return h('div', { id: 'avw-creation-domain', style: { marginTop: '14px' } }, h(Registered))
+}
+
 function CreationCenter() {
   const state = useStoreState()
   return h('section', { className: 'avw-col avw-col--center' },
@@ -2950,17 +3419,17 @@ function CreationCenter() {
       h('div', { style: { padding: '14px 16px', maxWidth: '1080px' } },
         h(BriefSection),
         h(MaterialsSection),
-        h('div', { style: { marginTop: '14px' } },
-          h(GapCard, { gap: INTEGRATION_GAPS.orchestration })),
-        h('div', { style: { marginTop: '10px' } },
-          h('div', { className: 'avw-card' },
-            h('div', { className: 'avw-card__body', style: { display: 'grid', gap: '6px' } },
-              h('p', { className: 'avw-hint', style: { margin: 0 } },
-                'C13 会在这里给出真实方向小样、方案三态（已定／未定／AI 可自主）和早期生产单元。现在不显示示例卡，也不显示可点的“验收”按钮。'),
-              h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
-                h(Chip, { tone: 'warn' }, '关键项未定 → 不开始完整制作'),
-                h(Chip, null, '三态由 C13 提供'),
-                h(Chip, null, '单元缺项 → 不给有效验收'))))))))
+        h(CreationDomainMount),
+        h(PartialIntegrationNote))))
+}
+
+/** What is genuinely wired, next to what is not — with no fake controls for the latter. */
+function PartialIntegrationNote() {
+  return h('div', { style: { marginTop: '10px' } },
+    h('div', { className: 'avw-gap' },
+      h('b', null, '已接入（只读）与仍未接入'),
+      h('div', null, '已接入：简报、方向、方案三态、早期生产单元、预览过期范围、AI 实际看／听，全部来自项目事件流里的 creation.projection。'),
+      h('div', null, '仍未接入：可点的验收／确认按钮（需要 C10 确认记录与 C11 交互）、助手回答、渲染触发（C12）。这些位置只写说明，不画假按钮。')))
 }
 
 function CreationBottom() {
@@ -3539,10 +4008,13 @@ const COMPONENTS = Object.freeze({
 function registerShellAdditions(ctx) {
   const disposeStyle = ensureStyle()
   const domain = registerCreationDomain(ctx)
+  const review = registerReviewDomain(ctx)
   // Evidence hook: the isolation walkthrough reads this to prove the registration is STATED.
   if (typeof window !== 'undefined') window.__avwCreationDomain = domain.status
+  if (typeof window !== 'undefined') window.__avwReviewDomain = review.status
   return () => {
     domain.dispose()
+    review.dispose()
     disposeStyle()
   }
 }
@@ -3562,6 +4034,12 @@ const AVW_PLUGIN = {
     CREATION_DOMAIN_REGISTRY,
     registerCreationDomain,
     newestProjection,
+    ReviewDomainView,
+    ReviewDomainSection,
+    REVIEW_DOMAIN_REGISTRY,
+    registerReviewDomain,
+    newestEditingProjection,
+    ReviewDomainMount,
   },
   apply(ctx) {
     ctx.effect(() => registerShellAdditions(ctx), 'ai-video-workbench: design system stylesheet')

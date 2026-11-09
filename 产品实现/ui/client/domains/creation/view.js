@@ -68,7 +68,7 @@ function BriefBucket(props) {
  * @param {any} [props.projection] the newest `creation.projection` payload
  * @param {string} [props.error] why the projection could not be read
  * @param {boolean} [props.loading]
- * @param {string} [props.notice] a standing note, e.g. "面位待总控裁定"
+ * @param {string} [props.notice] a standing note, e.g. "只读投影：数据来自项目事件流"
  */
 export function CreationDomainView(props) {
   const projection = props.projection ?? null

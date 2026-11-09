@@ -67,6 +67,27 @@ function MaterialProperties(props) {
       h('p', { className: 'avw-hint' }, '材料由 C10 保存与校验；预览画面、时间对象和渲染由 C12 接入。')))
 }
 
+/**
+ * Mount whatever the review domain registered, in the project page's notes tab.
+ *
+ * The domain view is a self-contained component (its own store read + event fetch), so mounting it
+ * here adds no panel, no slot and no effect — the shell's four entries stay four. When nothing is
+ * registered the mount says so instead of drawing an empty review that looks operational.
+ */
+function ReviewDomainMount() {
+  const registry = typeof REVIEW_DOMAIN_REGISTRY === 'object' && REVIEW_DOMAIN_REGISTRY !== null
+    ? REVIEW_DOMAIN_REGISTRY
+    : { component: null }
+  if (typeof registry.component !== 'function') {
+    return h('div', { className: 'avw-card', id: 'avw-review-domain', style: { marginTop: '8px' } },
+      h('div', { className: 'avw-card__head' }, h('span', { className: 'avw-card__title' }, '审阅、修改与回退')),
+      h('div', { className: 'avw-card__body' },
+        h('p', { className: 'avw-hint', style: { margin: 0 } }, '审阅领域视图没有注册：这里不显示任何数据，也不画假按钮。')))
+  }
+  const Registered = registry.component
+  return h('div', { id: 'avw-review-domain', style: { marginTop: '8px' } }, h(Registered))
+}
+
 function ProjectProperties(props) {
   const project = props?.project ?? null
   if (!project) return null
@@ -82,7 +103,7 @@ function ProjectProperties(props) {
       h(KV, { label: '目录', value: project.paths?.projectDir ?? '—', title: project.paths?.projectDir })),
     h('div', { className: 'avw-prop' },
       h('h4', null, '确认与保护'),
-      h('p', { className: 'avw-hint' }, '确认绑定对象、方面、范围与版本；候选与局部回退由 C14 接入。'),
+      h('p', { className: 'avw-hint' }, '确认绑定对象、方面、范围与版本；候选、对照与回退在“批注”面板的审阅视图里只读查看，接受／回退交互尚未接入。'),
       h('p', { className: 'avw-hint' }, '重要决定可以从“版本”里按时间与对象重新找到。')))
 }
 
@@ -94,16 +115,15 @@ function NotesPane(props) {
       state.selection
         ? h('p', { className: 'avw-hint' }, `当前对象：${state.selection.label ?? state.selection.objectId}`)
         : h('p', { className: 'avw-hint' }, '先在结构或材料里选中一个对象。'),
-      h(GapCard, {
-        gap: INTEGRATION_GAPS.review,
-        action: h(Btn, {
+      h('div', { style: { marginTop: '6px' } },
+        h(Btn, {
           size: 'sm',
           onClick: () => Actions.setRightTab('assistant'),
-        }, '把意见发到助手'),
-      })),
+        }, '把意见发到助手'))),
+    h(ReviewDomainMount),
     h('div', { className: 'avw-prop' },
       h('h4', null, '按对象查看讨论'),
-      h('p', { className: 'avw-hint' }, '讨论按对象、版本和事项归档；聊天不是唯一事实源。C14 接入后这里会显示真实批注。')))
+      h('p', { className: 'avw-hint' }, '讨论按对象、版本和事项归档；聊天不是唯一事实源。上方审阅视图显示真实批注、候选与历史（只读）。')))
 }
 
 function AssistantPane(props) {
@@ -202,7 +222,7 @@ function VersionDialog(props) {
   const project = state.project
   return h(Modal, { open: props.open, title: '版本与记录', onClose: props.onClose },
     h('p', { className: 'avw-hint', style: { marginTop: 0 } },
-      `当前修订 ${shortRevision(project?.revision)}。创作期有当前／候选／定稿三类版本；候选与对照由 C14 接入。`),
+      `当前修订 ${shortRevision(project?.revision)}。创作期有当前／候选／定稿三类版本；候选、对照与回退在“批注”面板的审阅视图里只读查看。`),
     h('div', { style: { maxHeight: '320px', overflow: 'auto', border: '1px solid var(--avw-line)', borderRadius: '3px' } },
       events.length === 0
         ? h('div', { style: { padding: '16px', color: 'var(--avw-text-3)', fontSize: '11.5px' } }, '这个项目还没有可显示的事件。')
@@ -216,7 +236,8 @@ function VersionDialog(props) {
         h('span', { className: 'avw-hint' }, event.objectId ? `对象 ${event.objectId}` : '')))),
     h('div', { style: { marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' } },
       h(Chip, { tone: 'ok', dot: true }, '自动保存由 C10 负责'),
-      h(Chip, { tone: 'warn' }, '候选与回退：C14 接入中')))
+      h(Chip, { tone: 'ok' }, '审阅视图：已接入（只读）'),
+      h(Chip, { tone: 'warn' }, '接受／回退按钮：未接入')))
 }
 
 function CreateDialog(props) {

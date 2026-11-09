@@ -78,7 +78,7 @@ export function CreationDomainSection() {
     loading: read.loading,
     projection: read.projection,
     error: read.error,
-    notice: '本视图面位待总控裁定；当前不占用导航入口。',
+    notice: '只读投影：数据来自项目事件流；要改项目事实请回到已有编辑入口。',
   })
 }
 

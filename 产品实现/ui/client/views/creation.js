@@ -57,8 +57,9 @@ function CreationLeftContent() {
         material.originalFilename,
         h('span', { className: 'meta' }, `${MATERIAL_OBSERVATION_LABELS[material.observation] ?? material.observation} · ${uses.filter((use) => use.materialId === material.materialId).length} 用`)))),
     h(CreationLeftSection, { title: '方向与方案' },
-      h('div', { className: 'avw-tree-item', style: { color: 'var(--avw-text-3)', cursor: 'default' } },
-        h(Icon, { name: 'layers' }), '方向、方案、单元由 C13 接入')),
+      h('button', { type: 'button', className: 'avw-tree-item', onClick: () => scrollToSection('avw-creation-domain') },
+        h(Icon, { name: 'layers' }), '创建领域视图（只读）',
+        h('span', { className: 'meta' }, '已接入'))),
     h('div', { style: { padding: '6px 8px' } },
       h('p', { className: 'avw-hint' }, '这里显示真实对象；没有的就不画。')))
 }
@@ -108,9 +109,9 @@ function BriefSection() {
   return h('div', { className: 'avw-card', id: 'avw-brief' },
     h('div', { className: 'avw-card__head' },
       h('span', { className: 'avw-card__title' }, '可编辑简报'),
-      h(Chip, { tone: 'accent' }, '真实保存到项目'),
+      h(Chip, { tone: 'warn' }, '界面草稿（未迁移到项目事实）'),
       h('span', { className: 'avw-grow' }),
-      h('span', { className: 'avw-card__note' }, '自动保存')),
+      h('span', { className: 'avw-card__note' }, '本地草稿自动保存；项目事实里的只读简报见下方创建领域视图')),
     h('div', { className: 'avw-card__body', style: { display: 'grid', gap: '9px' } },
       fields.map((field) => h('div', { key: field.id, className: `avw-brief avw-brief--${field.id}` },
         h('div', { className: 'avw-brief-label' },
@@ -159,6 +160,26 @@ function MaterialsSection() {
         h('span', { className: 'avw-hint', style: { margin: 0 } }, '未读、不可读、未观察会分别标出来；预览画面由 C12 接入。'))))
 }
 
+/**
+ * Mount whatever the creation domain registered, or say plainly that nothing is registered.
+ *
+ * The domain view is a self-contained component (its own store read + event fetch), so mounting it
+ * here adds no panel, no slot and no effect — the shell's four entries stay four.
+ */
+function CreationDomainMount() {
+  const registry = typeof CREATION_DOMAIN_REGISTRY === 'object' && CREATION_DOMAIN_REGISTRY !== null
+    ? CREATION_DOMAIN_REGISTRY
+    : { component: null }
+  if (typeof registry.component !== 'function') {
+    return h('div', { className: 'avw-card', id: 'avw-creation-domain', style: { marginTop: '14px' } },
+      h('div', { className: 'avw-card__head' }, h('span', { className: 'avw-card__title' }, '创建领域视图')),
+      h('div', { className: 'avw-card__body' },
+        h('p', { className: 'avw-hint', style: { margin: 0 } }, '领域视图没有注册：宿主没有提供注册表，所以这里不显示任何数据。')))
+  }
+  const Registered = registry.component
+  return h('div', { id: 'avw-creation-domain', style: { marginTop: '14px' } }, h(Registered))
+}
+
 function CreationCenter() {
   const state = useStoreState()
   return h('section', { className: 'avw-col avw-col--center' },
@@ -166,17 +187,17 @@ function CreationCenter() {
       h('div', { style: { padding: '14px 16px', maxWidth: '1080px' } },
         h(BriefSection),
         h(MaterialsSection),
-        h('div', { style: { marginTop: '14px' } },
-          h(GapCard, { gap: INTEGRATION_GAPS.orchestration })),
-        h('div', { style: { marginTop: '10px' } },
-          h('div', { className: 'avw-card' },
-            h('div', { className: 'avw-card__body', style: { display: 'grid', gap: '6px' } },
-              h('p', { className: 'avw-hint', style: { margin: 0 } },
-                'C13 会在这里给出真实方向小样、方案三态（已定／未定／AI 可自主）和早期生产单元。现在不显示示例卡，也不显示可点的“验收”按钮。'),
-              h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
-                h(Chip, { tone: 'warn' }, '关键项未定 → 不开始完整制作'),
-                h(Chip, null, '三态由 C13 提供'),
-                h(Chip, null, '单元缺项 → 不给有效验收'))))))))
+        h(CreationDomainMount),
+        h(PartialIntegrationNote))))
+}
+
+/** What is genuinely wired, next to what is not — with no fake controls for the latter. */
+function PartialIntegrationNote() {
+  return h('div', { style: { marginTop: '10px' } },
+    h('div', { className: 'avw-gap' },
+      h('b', null, '已接入（只读）与仍未接入'),
+      h('div', null, '已接入：简报、方向、方案三态、早期生产单元、预览过期范围、AI 实际看／听，全部来自项目事件流里的 creation.projection。'),
+      h('div', null, '仍未接入：可点的验收／确认按钮（需要 C10 确认记录与 C11 交互）、助手回答、渲染触发（C12）。这些位置只写说明，不画假按钮。')))
 }
 
 function CreationBottom() {
