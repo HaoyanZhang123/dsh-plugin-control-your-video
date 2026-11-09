@@ -55,7 +55,12 @@ function step(name, run) {
     steps.push({ step: name, status: 'ok', durationMs: Date.now() - started })
     return value
   } catch (error) {
-    steps.push({ step: name, status: 'failed', durationMs: Date.now() - started, error: String(error?.message ?? error) })
+    steps.push({
+      step: name,
+      status: 'failed',
+      durationMs: Date.now() - started,
+      error: String(error?.message ?? error),
+    })
     throw error
   }
 }
@@ -111,13 +116,26 @@ function main() {
   step('research.authorizeAndObserve', () => {
     research.recordAuthorization({ scope: '只看用户提供的公开参考页', humanResponse: '可以看公开资料', grantedBy: 'user' })
     const source = research.recordSource({ title: '参考页', location: '用户提供链接', claim: '原片几乎不动镜' })
-    research.recordObservation({ sourceId: source.source.sourceId, view: '前 20 秒', note: '镜头固定，只有雨在动', unverified: ['原片是否同期声未验证'] })
+    research.recordObservation({
+      sourceId: source.source.sourceId,
+      view: '前 20 秒',
+      note: '镜头固定，只有雨在动',
+      unverified: ['原片是否同期声未验证'],
+    })
   })
   const capability = step('capability.composeGaps', () =>
     composeCapabilities({
       task: '水墨短片',
       needs: [
-        { need: '标题字体', kind: 'tool', candidates: ['系统黑体', '手写体'], available: false, preferred: '系统黑体', fallback: '手写体', minimalValidation: '先渲染一行看裁切' },
+        {
+          need: '标题字体',
+          kind: 'tool',
+          candidates: ['系统黑体', '手写体'],
+          available: false,
+          preferred: '系统黑体',
+          fallback: '手写体',
+          minimalValidation: '先渲染一行看裁切',
+        },
         { need: '渲染', kind: 'tool', candidates: ['ffmpeg'], available: true },
       ],
     }),
@@ -126,10 +144,24 @@ function main() {
   // ---- directions and baseline -------------------------------------------------------------
   const directions = new DirectionSet({ paths, clock })
   const dirA = step('direction.addA', () =>
-    directions.addProposal({ title: '方向甲：固定机位静观', route: '全片固定机位，只有雨丝与衣角变化', experience: '安静、时间被拉长', highlights: ['结尾一次抬头'], tradeoffs: ['缺少运动，可能显得单薄'], unknowns: ['观众是否觉得单调'] }),
+    directions.addProposal({
+      title: '方向甲：固定机位静观',
+      route: '全片固定机位，只有雨丝与衣角变化',
+      experience: '安静、时间被拉长',
+      highlights: ['结尾一次抬头'],
+      tradeoffs: ['缺少运动，可能显得单薄'],
+      unknowns: ['观众是否觉得单调'],
+    }),
   )
   const dirB = step('direction.addB', () =>
-    directions.addProposal({ title: '方向乙：缓慢推近', route: '从站台全景缓慢推到人物侧脸', experience: '越来越近的压迫感', highlights: ['呼吸声替代环境声'], tradeoffs: ['推镜需要更多中间帧'], unknowns: ['推速多少合适'] }),
+    directions.addProposal({
+      title: '方向乙：缓慢推近',
+      route: '从站台全景缓慢推到人物侧脸',
+      experience: '越来越近的压迫感',
+      highlights: ['呼吸声替代环境声'],
+      tradeoffs: ['推镜需要更多中间帧'],
+      unknowns: ['推速多少合适'],
+    }),
   )
   refused('direction.combineWithoutNewElements', '组合未写真实新元素时被拒绝')
   const combined = step('direction.combine', () =>
@@ -143,15 +175,30 @@ function main() {
     }),
   )
   step('direction.proposeConfirmation', () =>
-    directions.proposeConfirmation({ decisionLog: decisions, directionId: combined.direction.directionId, versionId: current.versionId, rationale: '三个方向里最贴合“等待感”的一版' }),
+    directions.proposeConfirmation({
+      decisionLog: decisions,
+      directionId: combined.direction.directionId,
+      versionId: current.versionId,
+      rationale: '三个方向里最贴合“等待感”的一版',
+    }),
   )
   refused('direction.aiCannotDecide', 'AI 写“已定”状态时被拒绝')
 
   const baseline = new PlanBaseline({ paths, clock })
-  const goal = step('plan.addCoreGoal', () => baseline.addItem({ kind: 'core-goal', title: '12 秒雨夜等车', detail: '无旁白无字幕' }))
+  const goal = step('plan.addCoreGoal', () => baseline.addItem({
+    kind: 'core-goal',
+    title: '12 秒雨夜等车',
+    detail: '无旁白无字幕',
+  }))
   const structure = step('plan.addStructure', () => baseline.addItem({ kind: 'structure', title: '两段：等待 9 秒＋轻推 3 秒' }))
-  const delivery = step('plan.addDelivery', () => baseline.addItem({ kind: 'delivery-spec', title: '1920×1080、25fps、MP4' }))
-  const authorization = step('plan.addAuthorization', () => baseline.addItem({ kind: 'authorization', title: '允许开始制作' }))
+  const delivery = step('plan.addDelivery', () => baseline.addItem({
+    kind: 'delivery-spec',
+    title: '1920×1080、25fps、MP4',
+  }))
+  const authorization = step('plan.addAuthorization', () => baseline.addItem({
+    kind: 'authorization',
+    title: '允许开始制作',
+  }))
   const gateBefore = step('plan.gateBeforeDecision', () => baseline.gate())
   step('plan.userDecides', () => {
     for (const item of [goal.item, structure.item, delivery.item, authorization.item]) {
@@ -162,17 +209,33 @@ function main() {
 
   // ---- template, series, reference ---------------------------------------------------------
   step('template.bindAndAdapt', () => {
-    baseline.bindTemplate({ templateId: 'tpl-opener', declaredBy: 'user', fixedSlots: ['片名位置'], variableSlots: ['开场构图'], source: '用户确认的系列片头' })
+    baseline.bindTemplate({
+      templateId: 'tpl-opener',
+      declaredBy: 'user',
+      fixedSlots: ['片名位置'],
+      variableSlots: ['开场构图'],
+      source: '用户确认的系列片头',
+    })
     baseline.adaptTemplate({ adaptations: [{ slot: '开场构图', value: '俯拍站台积雨' }] })
   })
   const series = new SeriesShares({ paths, clock })
   step('series.proposeAndAdopt', () => {
     const proposed = series.proposeUpdate({ seriesId: 'ser_rain', summary: '系列统一片名位置', changes: ['片名移到右下'] })
-    series.adoptUpdate({ updateId: proposed.update.updateId, projectIds: [projectId], scope: '仅片名位置', authorizationRef: 'aut_demo_1' })
+    series.adoptUpdate({
+      updateId: proposed.update.updateId,
+      projectIds: [projectId],
+      scope: '仅片名位置',
+      authorizationRef: 'aut_demo_1',
+    })
   })
   const references = new ReferenceScopes({ paths, clock })
   const referenceScope = step('reference.defineScope', () =>
-    references.defineScope({ source: '用户提供的参考页', rights: '仅参考，不复制发行', aspects: ['visual', 'shot'], excluded: ['sound'] }),
+    references.defineScope({
+      source: '用户提供的参考页',
+      rights: '仅参考，不复制发行',
+      aspects: ['visual', 'shot'],
+      excluded: ['sound'],
+    }),
   )
   refused('reference.outOfScopeAspect', '要求复刻声音时被拒绝（未在授权范围）')
 
@@ -265,7 +328,12 @@ function main() {
       objectId: 'obj-rain',
       scope: '全片雨幕',
       planVersion: 'plan-v1',
-      motionSpec: { objectId: 'obj-rain', term: first.id, enter: { durationFrames: 12 }, hold: { durationFrames: 240 } },
+      motionSpec: {
+        objectId: 'obj-rain',
+        term: first.id,
+        enter: { durationFrames: 12 },
+        hold: { durationFrames: 240 },
+      },
     })
   })
   step('craft.recordRecipe', () =>
@@ -281,7 +349,12 @@ function main() {
     }),
   )
   step('craft.recordSeam', () =>
-    craft.recordSeam({ kind: NarrativeSeamKind.CONTINUOUS_SPACE, appliesWhen: '镜头在同一站台空间', disabledWhen: '若改抽象构成则不适用', carriedObject: '人物' }),
+    craft.recordSeam({
+      kind: NarrativeSeamKind.CONTINUOUS_SPACE,
+      appliesWhen: '镜头在同一站台空间',
+      disabledWhen: '若改抽象构成则不适用',
+      carriedObject: '人物',
+    }),
   )
 
   // ---- unit ------------------------------------------------------------------------------
@@ -354,7 +427,13 @@ function main() {
   // ---- production run --------------------------------------------------------------------
   const run = new ProductionRun({ paths, clock })
   const begun = step('production.begin', () =>
-    run.begin({ producerSessionId: 'maker-C13-001', projectVersion: `rev-${created.project.projectId.length}`, baselineRef: `baseline-${baseline.read().baselineVersion}`, scope: '完整初版', authorizedInputs: ['站台参考'] }),
+    run.begin({
+      producerSessionId: 'maker-C13-001',
+      projectVersion: `rev-${created.project.projectId.length}`,
+      baselineRef: `baseline-${baseline.read().baselineVersion}`,
+      scope: '完整初版',
+      authorizedInputs: ['站台参考'],
+    }),
   )
   refused('production.secondMaker', '另一会话继续时被拒绝')
   step('production.updateAndSave', () => {
@@ -385,16 +464,58 @@ function main() {
   step('vista.recordAllSeven', () => {
     vista.recordUnobserved({ producerSessionId: 'maker-C13-001', reason: '本次走查没有调用任何视觉模型，也没有真实图像输入' })
     vista.registerIdentity({ evidenceRef: 'evd:ref-day1', role: 'source', sha256: sha256('ref') })
-    vista.registerIdentity({ evidenceRef: 'evd:unit-001-mid', role: 'derived', derivedFrom: unitFile, transform: '抽中间帧' })
-    vista.requestInspection({ producerSessionId: 'maker-C13-001', question: '雨幕右上角是否出现硬边', kind: InspectionKind.REGION, evidenceRefs: ['evd:unit-001-mid'], returnedScope: '原比例 800×450 区域' })
-    const loop = vista.openLoop({ producerSessionId: 'maker-C13-001', prediction: { target: '雨幕边缘', scope: '右上角', preserve: ['人物轮廓'], expectedChange: '硬边消失' } })
-    vista.closeLoop({ loopId: loop.loop.loopId, action: '降低单层不透明度', observation: { observedChange: '硬边变淡但未消失', unexpected: ['整体对比略降'], unobserved: ['未看整片'] }, decision: { choice: '继续第二轮', by: 'ai', reason: '目标未完全达成' } })
+    vista.registerIdentity({
+      evidenceRef: 'evd:unit-001-mid',
+      role: 'derived',
+      derivedFrom: unitFile,
+      transform: '抽中间帧',
+    })
+    vista.requestInspection({
+      producerSessionId: 'maker-C13-001',
+      question: '雨幕右上角是否出现硬边',
+      kind: InspectionKind.REGION,
+      evidenceRefs: ['evd:unit-001-mid'],
+      returnedScope: '原比例 800×450 区域',
+    })
+    const loop = vista.openLoop({
+      producerSessionId: 'maker-C13-001',
+      prediction: { target: '雨幕边缘', scope: '右上角', preserve: ['人物轮廓'], expectedChange: '硬边消失' },
+    })
+    vista.closeLoop({
+      loopId: loop.loop.loopId,
+      action: '降低单层不透明度',
+      observation: { observedChange: '硬边变淡但未消失', unexpected: ['整体对比略降'], unobserved: ['未看整片'] },
+      decision: { choice: '继续第二轮', by: 'ai', reason: '目标未完全达成' },
+    })
     vista.setMemory({ project: ['无旁白无字幕', '片名位置固定'], work: ['雨幕第二轮', '右上角硬边'], recoveryRefs: ['evd:unit-001-mid'] })
     vista.compressWorkMemory({ keep: ['雨幕第二轮'], dropped: ['上一轮尝试'] })
-    vista.recordRecovery({ producerSessionId: 'maker-C13-001', cause: RecoveryCause.COMPACTION, checks: { baseline: true, version: true, evidence: true, openWork: true } })
-    vista.recordEfficiency({ producerSessionId: 'maker-C13-001', strategy: ['overview-proxy', 'on-demand-original'], rounds: 2, evidenceRefs: ['evd:unit-001-mid'] })
-    vista.recordToolCall({ toolId: 'ffmpeg', toolVersion: '9.0.1', readOnly: false, permission: '渲染单元', result: '产出 75 帧', outcomeKnown: true })
-    vista.recordToolCall({ toolId: 'ffprobe', toolVersion: '9.0.1', readOnly: true, permission: '只读探测', result: '读到 25fps', outcomeKnown: true })
+    vista.recordRecovery({
+      producerSessionId: 'maker-C13-001',
+      cause: RecoveryCause.COMPACTION,
+      checks: { baseline: true, version: true, evidence: true, openWork: true },
+    })
+    vista.recordEfficiency({
+      producerSessionId: 'maker-C13-001',
+      strategy: ['overview-proxy', 'on-demand-original'],
+      rounds: 2,
+      evidenceRefs: ['evd:unit-001-mid'],
+    })
+    vista.recordToolCall({
+      toolId: 'ffmpeg',
+      toolVersion: '9.0.1',
+      readOnly: false,
+      permission: '渲染单元',
+      result: '产出 75 帧',
+      outcomeKnown: true,
+    })
+    vista.recordToolCall({
+      toolId: 'ffprobe',
+      toolVersion: '9.0.1',
+      readOnly: true,
+      permission: '只读探测',
+      result: '读到 25fps',
+      outcomeKnown: true,
+    })
   })
   const vistaGate = step('vista.gate', () => vista.gate())
   const c16 = step('vista.c16Baseline', () =>
@@ -413,7 +534,12 @@ function main() {
   const previews = new PreviewSurface({ paths, clock })
   const plans = planPair(process.env.C13_FONT ?? null)
   step('preview.recordAndDescribe', () => {
-    previews.recordPreview({ basePlan: plans.base, coveredRange: null, file: 'media/preview-v1.mp4', taskId: 'task-preview' })
+    previews.recordPreview({
+      basePlan: plans.base,
+      coveredRange: null,
+      file: 'media/preview-v1.mp4',
+      taskId: 'task-preview',
+    })
   })
   const previewStanding = step('preview.describeStale', () => previews.describe({ currentPlan: plans.next }))
   refused('preview.cannotClaimApplied', '过期预览声称已生效时被拒绝')
@@ -430,9 +556,23 @@ function main() {
     },
   }
   const pins = new PinSync({ paths, clock, pinSource })
-  const pinMismatch = step('pins.advanceWithRawC10Id', () => pins.advance({ toolId: 'ffmpeg', fromProjectVersion: 'rev-1', toProjectVersion: 'rev-2', toolVersion: '9.0.1' }))
-  step('pins.setExplicitReference', () => pins.setReference({ c06ProjectRef: 'project-c13', authorizedBy: 'orchestrator', reason: '走查中登记一次明确引用，代替自动翻译' }))
-  const pinAdvanced = step('pins.advanceAfterReference', () => pins.advance({ toolId: 'ffmpeg', fromProjectVersion: 'rev-2', toProjectVersion: 'rev-3', toolVersion: '9.0.1' }))
+  const pinMismatch = step('pins.advanceWithRawC10Id', () => pins.advance({
+    toolId: 'ffmpeg',
+    fromProjectVersion: 'rev-1',
+    toProjectVersion: 'rev-2',
+    toolVersion: '9.0.1',
+  }))
+  step('pins.setExplicitReference', () => pins.setReference({
+    c06ProjectRef: 'project-c13',
+    authorizedBy: 'orchestrator',
+    reason: '走查中登记一次明确引用，代替自动翻译',
+  }))
+  const pinAdvanced = step('pins.advanceAfterReference', () => pins.advance({
+    toolId: 'ffmpeg',
+    fromProjectVersion: 'rev-2',
+    toProjectVersion: 'rev-3',
+    toolVersion: '9.0.1',
+  }))
 
   // ---- legacy ui-state migration ---------------------------------------------------------
   const dataRoot = temp.dir('data')
@@ -440,7 +580,16 @@ function main() {
     const dir = path.join(dataRoot, 'ui-state')
     fs.mkdirSync(dir, { recursive: true })
     fs.writeFileSync(path.join(dir, `${projectId}.json`), JSON.stringify({ brief: { user: '旧界面里写的：不要旁白', source: '', ai: '' } }), 'utf8')
-    fs.writeFileSync(path.join(dir, `${projectId}.assistant.json`), JSON.stringify({ messages: [{ messageId: 'msg_0001', text: '先看方向', refs: [], status: 'queued-for-orchestration' }], nextSeq: 2 }), 'utf8')
+    fs.writeFileSync(
+      path.join(dir, `${projectId}.assistant.json`),
+      JSON.stringify({
+        messages: [
+          { messageId: 'msg_0001', text: '先看方向', refs: [], status: 'queued-for-orchestration' },
+        ],
+        nextSeq: 2,
+      }),
+      'utf8',
+    )
   })
   const migration = step('legacy.migrate', () => migrateLegacyUiState({ paths, dataRoot, clock }))
 
@@ -451,7 +600,15 @@ function main() {
   })
   const cutGate = step('cut.gate', () =>
     initialCutGate({
-      baseline: { ref: 'baseline-1', items: baseline.read().items.map((item) => ({ itemId: item.itemId, kind: item.kind, blocking: item.blocking, state: item.state })) },
+      baseline: {
+        ref: 'baseline-1',
+        items: baseline.read().items.map((item) => ({
+          itemId: item.itemId,
+          kind: item.kind,
+          blocking: item.blocking,
+          state: item.state,
+        })),
+      },
       units: registry.list(),
       cut: {
         files: [{ path: 'media/initial-cut.mp4', sha256: sha256('c13-initial-cut-bytes') }],
@@ -479,19 +636,48 @@ function main() {
       brief: brief.summary(),
       research: research.summary(),
       capabilityGaps: capability.gaps,
-      directions: directions.list().map((entry) => ({ directionId: entry.directionId, version: entry.version, state: entry.state })),
+      directions: directions.list().map((entry) => ({
+        directionId: entry.directionId,
+        version: entry.version,
+        state: entry.state,
+      })),
       planGateBefore: gateBefore,
       planGateAfter: gateAfter,
-      unit: { unitId: unitResult.unitId, status: unitResult.status, missing: unitResult.validation.missing, unobserved: unitResult.validation.unobserved },
-      workPackage: { runId: begun.run.runId, producerSessionId: begun.run.producerSessionId, execution: run.read().execution },
+      unit: {
+        unitId: unitResult.unitId,
+        status: unitResult.status,
+        missing: unitResult.validation.missing,
+        unobserved: unitResult.validation.unobserved,
+      },
+      workPackage: {
+        runId: begun.run.runId,
+        producerSessionId: begun.run.producerSessionId,
+        execution: run.read().execution,
+      },
       productionGate: productionGateResult,
       vista: vistaGate,
       c16Baseline: c16.baseline,
-      method: { routeVersion: route.route.version, baselineRecheckRequired: route.route.baselineRecheckRequired, analysisId: analysis.analysis.analysisId, faultEntry: fault.entry.entryId, convergence: methods.convergenceVerdict(convergence.convergence.convergenceId) },
+      method: {
+        routeVersion: route.route.version,
+        baselineRecheckRequired: route.route.baselineRecheckRequired,
+        analysisId: analysis.analysis.analysisId,
+        faultEntry: fault.entry.entryId,
+        convergence: methods.convergenceVerdict(convergence.convergence.convergenceId),
+      },
       craft: { term: term.selection.term, lockedAgainstAiChange: term.selection.lockedAgainstAiChange },
       preview: previewStanding,
-      pins: { mismatchStatus: pinMismatch.status, mismatchCode: pinMismatch.issue?.code, afterReference: pinAdvanced.status, reference: pins.read().referenceDecision?.c06ProjectRef },
-      migration: { status: migration.status, briefEntriesWritten: migration.record?.briefEntriesWritten, messagesWritten: migration.record?.messagesWritten, uiReadOnly: migration.uiReadOnly },
+      pins: {
+        mismatchStatus: pinMismatch.status,
+        mismatchCode: pinMismatch.issue?.code,
+        afterReference: pinAdvanced.status,
+        reference: pins.read().referenceDecision?.c06ProjectRef,
+      },
+      migration: {
+        status: migration.status,
+        briefEntriesWritten: migration.record?.briefEntriesWritten,
+        messagesWritten: migration.record?.messagesWritten,
+        uiReadOnly: migration.uiReadOnly,
+      },
       cutGate: { ok: cutGate.ok, blockers: cutGate.blockers, handoff: cutGate.handoff },
     },
     limits: [

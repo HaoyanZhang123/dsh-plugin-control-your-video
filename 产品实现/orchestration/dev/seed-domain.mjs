@@ -12,6 +12,7 @@
  * @module orchestration/dev/seed-domain
  */
 
+import fs from 'node:fs'
 import path from 'node:path'
 
 import { Clock } from '../../base/index.js'
@@ -19,6 +20,8 @@ import { ProjectPaths } from '../../core/project/paths.js'
 import { BriefSource, CreationBrief } from '../../orchestration/brief.js'
 import { DirectionSet, PlanBaseline } from '../../orchestration/direction.js'
 import { PreviewSurface } from '../../orchestration/preview.js'
+import { resolveUnitProfile, UnitBase, UnitCondition, UnitOperation, UnitRegistry } from '../../orchestration/units.js'
+import { sha256File } from '../../base/index.js'
 import { buildC12UnitPlan } from '../../media/fixtures/c12-unit.js'
 import { normalizePlan } from '../../media/plan.js'
 
@@ -88,6 +91,85 @@ function main() {
     const windir = process.env.WINDIR ?? process.env.SystemRoot ?? 'C:\\Windows'
     const base = normalizePlan(buildC12UnitPlan({ fontFile: path.join(windir, 'Fonts', 'msyh.ttc') }))
     previews.recordPreview({ basePlan: { ...base, planVersion: 'plan-v1' }, coveredRange: null, file: 'media/unit-001-master.mp4', taskId: 'c13-real-render' })
+  }
+
+  // A real rendered unit, copied in with its real hashes, so the domain view shows a complete unit
+  // instead of an empty slot. The evidence ids are the observation references from the render run.
+  const renderDir = path.resolve(arg('--render-dir', path.join(process.cwd(), 'evidence', 'c13-render')))
+  const units = new UnitRegistry({ paths, clock })
+  if (units.list().length === 0 && fs.existsSync(path.join(renderDir, 'unit-001-master.mp4'))) {
+    const mediaDir = paths.resolve('media')
+    fs.mkdirSync(mediaDir, { recursive: true })
+    const copies = {}
+    for (const [role, file] of [['master', 'unit-001-master.mp4'], ['repaired', 'unit-001-repair-002.mp4'], ['cut', 'initial-cut-1080p.mp4']]) {
+      const target = paths.resolve(`media/${file}`)
+      fs.copyFileSync(path.join(renderDir, file), target)
+      copies[role] = { path: `media/${file}`, sha256: sha256File(target) }
+    }
+    const profile = resolveUnitProfile({
+      base: UnitBase.TEMPORAL_MOTION,
+      operation: UnitOperation.CREATE,
+      conditions: [UnitCondition.SUBTITLE],
+    })
+    const unit = {
+      unitManifest: {
+        unitId: 'unit-001-real',
+        projectId,
+        base: profile.base,
+        operation: profile.operation,
+        profileId: profile.profileId,
+        profileVersion: profile.profileVersion,
+        target: '9 秒双场景技术夹具单元（C02 结构，C12 适配器真实渲染）',
+        spec: { width: 1280, height: 720, frames: 270, fps: 30 },
+        status: 'produced',
+        source: 'C13 真实渲染走查',
+      },
+      unitOutput: {
+        files: [
+          { role: 'master', path: copies.master.path, sha256: copies.master.sha256 },
+          { role: 'repaired', path: copies.repaired.path, sha256: copies.repaired.sha256 },
+        ],
+        readableWhole: true,
+        evidence: [
+          { kind: 'full-playback', ref: 'evd:unit-contact-sheet', executed: true, observationState: 'not-observed' },
+          { kind: 'start-frame', ref: 'evd:unit-f000-overview', executed: true, observationState: 'observed' },
+          { kind: 'mid-frame', ref: 'evd:unit-f150', executed: true, observationState: 'observed' },
+          { kind: 'end-frame', ref: 'evd:unit-f230', executed: true, observationState: 'observed' },
+          { kind: 'adjacent-context', ref: 'evd:unit-contact-sheet', executed: true, observationState: 'observed' },
+          { kind: 'target-aspect-render', ref: 'evd:cut-f150', executed: true, observationState: 'observed' },
+          { kind: 'text-region-detail', ref: 'evd:unit-f150-subtitle-region', executed: true, observationState: 'observed' },
+        ],
+        checks: [
+          { name: '整片可解码 270 帧', executed: true, passed: true },
+          { name: '规格与 outputSpec 一致', executed: true, passed: true },
+        ],
+      },
+      productionRecipe: {
+        authorizedInputs: ['RENDER-LAB/01-corpus 音频'],
+        methods: ['c12-ffmpeg-composition@1.0.0'],
+        tools: ['ffmpeg@9.0.1'],
+        parameters: { planId: 'c12-unit-001', totalFrames: 270 },
+        execution: { executed: true, taskId: 'c13-real-render' },
+        fixed: ['270 帧结构', '字幕位置'],
+        variable: ['字幕文本'],
+      },
+      humanResultPack: {
+        slots: [{ name: '单元成片', value: copies.master.path }, { name: '修复对照', value: copies.repaired.path }],
+        knownIssues: ['修订后字幕右缘距背景条右缘约 5–10px', '背景条宽度固定，长文本会越界'],
+        unverified: ['整片连续播放的节奏', '音频听感（未听）'],
+        choices: [{ id: 'accept', label: '接受本次修复（尚未接入按钮）' }],
+      },
+      continuationContract: {
+        directReuse: '同一 plan 与适配器可直接复现',
+        adaptByContent: '换画幅走 adapt 重新排版',
+        recreate: '换运行时重新渲染',
+        reverify: '字幕长度变化要重看原比例区域',
+        dependsOn: ['RENDER-LAB/01-corpus'],
+        invalidWhen: ['字体更换', '画幅比例变化'],
+      },
+    }
+    const registeredUnit = units.register({ unit, profile })
+    process.stdout.write(`unit: ${registeredUnit.status}, unobserved=${registeredUnit.validation.unobserved.join('|') || 'none'}\n`)
   }
 
   process.stdout.write(`seeded ${projectId}\n`)

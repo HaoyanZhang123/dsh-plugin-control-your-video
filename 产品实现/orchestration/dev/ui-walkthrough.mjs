@@ -36,11 +36,11 @@ function record(name, ok, detail) {
 
 async function main() {
   fs.mkdirSync(OUT, { recursive: true })
-  // Start from a clean isolated home: a leftover profile would carry earlier runs' projects into
-  // this evidence and make the screenshot ambiguous about what this run actually did.
+  // Start from a clean isolated home AND a clean profile: a leftover instance would carry earlier
+  // runs' projects into this evidence and make the screenshot ambiguous about what this run did.
+  // The home is pinned under ROOT so one delete removes both.
   fs.rmSync(ROOT, { recursive: true, force: true })
-  const freshHome = process.env.AVW_ISOLATED_HOME
-  if (freshHome !== undefined) fs.rmSync(freshHome, { recursive: true, force: true })
+  process.env.AVW_ISOLATED_HOME = path.join(ROOT, 'home')
   const layout = setupIsolated(ROOT)
   const projectsRoot = path.join(layout.home, 'data', 'ai-video-workbench', 'projects')
   fs.mkdirSync(projectsRoot, { recursive: true })
@@ -88,7 +88,10 @@ async function main() {
       return (match.innerText || '').trim()
     })()`)
     await sleep(2500)
-    const mounted = await waitFor(async () => session.evaluate('document.querySelector(".avw-root") !== null'), { timeoutMs: 20000, label: '工作台挂载' })
+    const mounted = await waitFor(async () => session.evaluate('document.querySelector(".avw-root") !== null'), {
+      timeoutMs: 20000,
+      label: '工作台挂载',
+    })
       .then(() => true)
       .catch(() => false)
     record('shell: workbench panel mounted', mounted, { clickedEntry: entry })
@@ -117,20 +120,16 @@ async function main() {
     })()`)
     record('events: creation.projection readable through the real route', events.ok === true && events.hasProjection === true, events)
 
-    const visible = await session.evaluate('document.body.innerText.includes("创建领域视图")')
-    record('domain: not drawn into the page while the surface is pending', visible === false, { visible })
-
     await session.screenshot(path.join(OUT, 'isolated-shell.png'))
-    // Open the project so the screenshot shows the real creation surface (unchanged by C13).
+    // Open the project so the assertions and screenshots are about the creation surface itself.
     const opened = await session.evaluate(`(() => {
-      const row = document.querySelector('.avw-row, .avw-tree-item, [data-project]')
       const target = Array.from(document.querySelectorAll('button, [role="button"], .avw-row, a'))
         .find((el) => (el.innerText || '').includes('C13 领域视图走查'))
       if (target) target.click()
       return Boolean(target)
     })()`)
     await sleep(2500)
-    // A login prompt can appear over the creation surface; close it so the screenshot shows the page.
+    // A login prompt can appear over the creation surface; close it so the page is visible.
     await session.evaluate(`(() => {
       const dialog = document.querySelector('[role="dialog"], .avw-modal, [class*="modal"]')
       if (!dialog) return false
@@ -138,11 +137,66 @@ async function main() {
       if (closer) closer.click()
       return true
     })()`)
-    await session.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
-    await session.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
-    await sleep(800)
-    await session.screenshot(path.join(OUT, 'isolated-creation.png'))
+    await session.send('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'Escape',
+      code: 'Escape',
+      windowsVirtualKeyCode: 27,
+    })
+    await session.send('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'Escape',
+      code: 'Escape',
+      windowsVirtualKeyCode: 27,
+    })
+    await sleep(1200)
     record('shell: project opened through the real UI', opened === true, { opened })
+
+    // The view must be DRAWN, and its numbers must come from the project's event stream rather
+    // than from a fixture: the seeded requirement text exists only in the project facts.
+    const drawn = await session.evaluate(`(() => {
+      const text = document.body.innerText
+      return {
+        hasView: text.includes('创建领域视图'),
+        hasProjectFact: text.includes('用已就位的渲染工作区出真实单元与成片'),
+        hasPreview: text.includes('上一版计划'),
+        hasAudio: text.includes('未听'),
+        hasUnit: text.includes('unit-001-real'),
+      }
+    })()`)
+    record(
+      'domain: drawn into the creation page with data from the project event stream',
+      drawn.hasView === true &&
+        drawn.hasProjectFact === true &&
+        drawn.hasPreview === true &&
+        drawn.hasAudio === true &&
+        drawn.hasUnit === true,
+      drawn,
+    )
+    await session.evaluate(`(() => {
+      const section = document.getElementById('avw-creation-domain')
+      if (section) section.scrollIntoView({ block: 'start' })
+      return section !== null
+    })()`)
+    await sleep(700)
+    await session.screenshot(path.join(OUT, 'isolated-creation.png'))
+    await session.evaluate(`(() => {
+      const section = document.getElementById('avw-creation-domain')
+      if (section) section.scrollIntoView({ block: 'start' })
+      return section !== null
+    })()`)
+    await sleep(600)
+    await session.screenshot(path.join(OUT, 'isolated-domain-view.png'))
+    // Second shot: the unit / preview / AI-seen part of the same view, in the same page.
+    await session.evaluate(`(() => {
+      const nodes = Array.from(document.querySelectorAll('.avw-card__title'))
+      const target = nodes.find((el) => (el.innerText || '').includes('早期单元'))
+      if (target) target.scrollIntoView({ block: 'start' })
+      return target !== undefined
+    })()`)
+    await sleep(500)
+    await session.screenshot(path.join(OUT, 'isolated-domain-units.png'))
+
     const problems = session.consumerProblems?.() ?? session.consumerProblems ?? null
     const consoleProblems = typeof session.consumerProblems === 'function' ? session.consumerProblems() : problems
     record('shell: no console errors captured', Array.isArray(consoleProblems) ? consoleProblems.length === 0 : true, consoleProblems)

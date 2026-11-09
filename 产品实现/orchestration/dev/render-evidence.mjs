@@ -109,7 +109,10 @@ function main() {
   const repairRender = renderInto(repairedPlan, 'unit-001-repair-002')
 
   // 3) The complete initial cut: the same content at the delivery spec.
-  const { plan: deliveryPlan, layout } = createAdaptOperation({ basePlan: repairedPlan, target: { width: 1920, height: 1080 } })
+  const {
+    plan: deliveryPlan,
+    layout,
+  }= createAdaptOperation({ basePlan: repairedPlan, target: { width: 1920, height: 1080 } })
   const cutRender = renderInto(deliveryPlan, 'initial-cut-1080p')
 
   const index = {
@@ -130,8 +133,16 @@ function main() {
       planVersion: plan.planVersion,
       totalFrames: plan.timebase.totalFrames,
       fps: `${plan.timebase.fpsNumerator}/${plan.timebase.fpsDenominator}`,
-      scenes: plan.scenes.map((scene) => ({ id: scene.id, start: scene.timeline.startFrame, end: scene.timeline.endFrameExclusive })),
-      outputSpec: { width: plan.outputSpec.width, height: plan.outputSpec.height, pixelFormat: plan.outputSpec.pixelFormat },
+      scenes: plan.scenes.map((scene) => ({
+        id: scene.id,
+        start: scene.timeline.startFrame,
+        end: scene.timeline.endFrameExclusive,
+      })),
+      outputSpec: {
+        width: plan.outputSpec.width,
+        height: plan.outputSpec.height,
+        pixelFormat: plan.outputSpec.pixelFormat,
+      },
     },
     deliveryPlan: {
       planVersion: deliveryPlan.planVersion,

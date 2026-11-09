@@ -195,16 +195,38 @@ function main() {
     producerSessionId,
     strategy: ['multi-frame-overview', 'full-frame', 'original-ratio-region'],
     rounds: 3,
-    metrics: { tokens: null, waitMs: null, storageBytes: inputs.derivatives.reduce((sum, entry) => sum + entry.bytes, 0) },
+    metrics: {
+      tokens: null,
+      waitMs: null,
+      storageBytes: inputs.derivatives.reduce((sum, entry) => sum + entry.bytes, 0),
+    },
     evidenceRefs: inputs.derivatives.map((entry) => refFor(entry.name)).slice(0, 8),
   })
-  ledger.recordToolCall({ toolId: 'ffmpeg', toolVersion: renderIndex.toolchain.ffmpeg.version, readOnly: false, permission: '抽帧与裁区域（写派生文件）', result: `${inputs.derivatives.length} 个 PNG`, outcomeKnown: true })
-  ledger.recordToolCall({ toolId: 'read_image', toolVersion: 'session-model', readOnly: true, permission: '把本地 PNG 送入当前会话模型', result: '读取 5 张图', outcomeKnown: true })
+  ledger.recordToolCall({
+    toolId: 'ffmpeg',
+    toolVersion: renderIndex.toolchain.ffmpeg.version,
+    readOnly: false,
+    permission: '抽帧与裁区域（写派生文件）',
+    result: `${inputs.derivatives.length} 个 PNG`,
+    outcomeKnown: true,
+  })
+  ledger.recordToolCall({
+    toolId: 'read_image',
+    toolVersion: 'session-model',
+    readOnly: true,
+    permission: '把本地 PNG 送入当前会话模型',
+    result: '读取 5 张图',
+    outcomeKnown: true,
+  })
 
   const gate = ledger.gate()
 
   // ---- the unit itself, with honest observation coverage ----------------------------------
-  const profile = resolveUnitProfile({ base: UnitBase.TEMPORAL_MOTION, operation: UnitOperation.CREATE, conditions: [UnitCondition.SUBTITLE] })
+  const profile = resolveUnitProfile({
+    base: UnitBase.TEMPORAL_MOTION,
+    operation: UnitOperation.CREATE,
+    conditions: [UnitCondition.SUBTITLE],
+  })
   const unitFile = 'media/unit-001-master.mp4'
   const unit = {
     unitManifest: {
@@ -226,13 +248,29 @@ function main() {
       ],
       readableWhole: true,
       evidence: [
-        { kind: 'full-playback', ref: refFor('unit-contact-sheet.png'), executed: true, observationState: 'not-observed', note: '程序已解码 270 帧；AI 未连续观看整片' },
+        {
+          kind: 'full-playback',
+          ref: refFor('unit-contact-sheet.png'),
+          executed: true,
+          observationState: 'not-observed',
+          note: '程序已解码 270 帧；AI 未连续观看整片',
+        },
         { kind: 'start-frame', ref: refFor('unit-f000-overview.png'), executed: true, observationState: 'observed' },
         { kind: 'mid-frame', ref: refFor('unit-f150.png'), executed: true, observationState: 'observed' },
         { kind: 'end-frame', ref: refFor('unit-f230.png'), executed: true, observationState: 'observed' },
-        { kind: 'adjacent-context', ref: refFor('unit-contact-sheet.png'), executed: true, observationState: 'observed' },
+        {
+          kind: 'adjacent-context',
+          ref: refFor('unit-contact-sheet.png'),
+          executed: true,
+          observationState: 'observed',
+        },
         { kind: 'target-aspect-render', ref: refFor('cut-f150.png'), executed: true, observationState: 'observed' },
-        { kind: 'text-region-detail', ref: refFor('unit-f150-subtitle-region.png'), executed: true, observationState: 'observed' },
+        {
+          kind: 'text-region-detail',
+          ref: refFor('unit-f150-subtitle-region.png'),
+          executed: true,
+          observationState: 'observed',
+        },
       ],
       checks: [
         { name: '整片可解码 270 帧', executed: true, passed: true },
@@ -243,7 +281,11 @@ function main() {
       authorizedInputs: ['RENDER-LAB/01-corpus 的 3 段用户音频', 'C02 已验收单元结构'],
       methods: ['c12-ffmpeg-composition@1.0.0'],
       tools: [`ffmpeg@${renderIndex.toolchain.ffmpeg.version}`],
-      parameters: { planId: renderIndex.plan.planId, planVersion: renderIndex.plan.planVersion, totalFrames: renderIndex.plan.totalFrames },
+      parameters: {
+        planId: renderIndex.plan.planId,
+        planVersion: renderIndex.plan.planVersion,
+        totalFrames: renderIndex.plan.totalFrames,
+      },
       execution: { executed: true, taskId: 'c13-real-render' },
       fixed: ['270 帧结构', '字幕位置', '音轨字节'],
       variable: ['字幕文本'],
@@ -279,7 +321,13 @@ function main() {
 
   // ---- production run, paused for the user review ----------------------------------------
   const run = new ProductionRun({ paths, clock })
-  run.begin({ producerSessionId, projectVersion: `rev-${renderIndex.plan.planVersion}`, baselineRef: 'baseline-real-1', scope: '完整初版', authorizedInputs: ['corpus 音频'] })
+  run.begin({
+    producerSessionId,
+    projectVersion: `rev-${renderIndex.plan.planVersion}`,
+    baselineRef: 'baseline-real-1',
+    scope: '完整初版',
+    authorizedInputs: ['corpus 音频'],
+  })
   run.update({ producerSessionId, patch: { currentUnit: 'unit-001-real', nextAction: '等待用户审片' } })
   run.savePosition({ producerSessionId, savedPosition: '修复后整片已渲染，等待用户审片', currentUnit: 'unit-001-real' })
   const paused = run.pause({ reason: '等待用户审片' })
@@ -296,15 +344,37 @@ function main() {
       repair: renderIndex.renders.repair,
       cut: renderIndex.renders.cut,
     },
-    inputs: inputs.derivatives.map((entry) => ({ name: entry.name, sha256: entry.sha256, frame: entry.frame, region: entry.region, view: entry.view, width: entry.width, height: entry.height })),
+    inputs: inputs.derivatives.map((entry) => ({
+      name: entry.name,
+      sha256: entry.sha256,
+      frame: entry.frame,
+      region: entry.region,
+      view: entry.view,
+      width: entry.width,
+      height: entry.height,
+    })),
     findings: FINDINGS,
     observationIds,
     inspectionId: inspection.inspection.inspectionId,
-    loop: { loopId: closed.loop.loopId, prediction: closed.loop.prediction, observation: closed.loop.observation, decision: closed.loop.decision },
+    loop: {
+      loopId: closed.loop.loopId,
+      prediction: closed.loop.prediction,
+      observation: closed.loop.observation,
+      decision: closed.loop.decision,
+    },
     recovery: { recoveryId: recovery.recovery.recoveryId, ok: recovery.recovery.ok },
-    efficiency: { efficiencyId: efficiency.efficiency.efficiencyId, rounds: efficiency.efficiency.rounds, strategy: efficiency.efficiency.strategy },
+    efficiency: {
+      efficiencyId: efficiency.efficiency.efficiencyId,
+      rounds: efficiency.efficiency.rounds,
+      strategy: efficiency.efficiency.strategy,
+    },
     vista: gate,
-    unit: { unitId: registered.unitId, status: registered.status, missing: registered.validation.missing, unobserved: registered.validation.unobserved },
+    unit: {
+      unitId: registered.unitId,
+      status: registered.status,
+      missing: registered.validation.missing,
+      unobserved: registered.validation.unobserved,
+    },
     craftTerm: { term: term.id, label: term.label },
     production: { execution: paused.run.execution, savedPosition: paused.run.savedPosition },
     notObserved: ['整片连续播放', '转场逐帧', '任何音频（宿主无听辨通道）'],
