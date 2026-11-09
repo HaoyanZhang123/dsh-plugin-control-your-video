@@ -1,0 +1,10 @@
+# Normalize line endings on every platform; the toolchain formats for LF.
+* text=auto eol=lf
+
+# Media and binary artefacts are never diffed as text.
+*.mp4 binary
+*.wav binary
+*.png binary
+*.gif binary
+*.jpg binary
+*.woff2 binary
