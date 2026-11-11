@@ -71,6 +71,21 @@ function fColor(color) {
   if (/^#[0-9a-fA-F]{6}$/.test(text)) return `0x${text.slice(1)}`
   if (/^#[0-9a-fA-F]{8}$/.test(text)) return `0x${text.slice(1)}`
   if (/^0x[0-9a-fA-F]{6,8}$/.test(text)) return text
+  // `rgb()` / `rgba()` are legal CSS and plan authors write them (D4). ffmpeg speaks 0xRRGGBB,
+  // so convert instead of refusing: a valid colour is not an error just because it is spelled
+  // the way every other layer spells it.
+  const rgb = text.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*([0-9]*\.?[0-9]+)\s*)?\)$/i)
+  if (rgb !== null) {
+    const [r, g, b] = [rgb[1], rgb[2], rgb[3]].map((part) => Number(part))
+    if ([r, g, b].every((part) => Number.isInteger(part) && part >= 0 && part <= 255)) {
+      const hex = [r, g, b].map((part) => part.toString(16).padStart(2, '0')).join('')
+      const alpha = rgb[4] === undefined ? null : Number(rgb[4])
+      if (alpha === null) return `0x${hex}`
+      if (alpha >= 0 && alpha <= 1) {
+        return `0x${hex}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`
+      }
+    }
+  }
   if (/^[a-zA-Z]+$/.test(text)) return text
   throw new ValidationError('无法识别的颜色值', { color: text })
 }
@@ -180,9 +195,10 @@ export function buildCompositionGraph(plan, options) {
     const enter = motion.enter?.durationFrames ?? 0
     const hold = motion.hold?.durationFrames ?? 0
     const exit = motion.exit?.durationFrames ?? 0
-    const sceneStartSeconds = (sceneStartFrame * fpsDenominator) / fpsNumerator
-    const enterStart =
-      sceneStartSeconds + ((object.timeline.startFrame - sceneStartFrame) * fpsDenominator) / fpsNumerator
+    // `t` inside drawtext is the SCENE STREAM's local time: the scene is trimmed and re-based with
+    // `setpts=PTS-STARTPTS`, so scene start is t=0. Adding `sceneStartSeconds` here shifted every
+    // non-first-scene text by its whole scene offset (D2: s2 text appeared 216 frames late).
+    const enterStart = ((object.timeline.startFrame - sceneStartFrame) * fpsDenominator) / fpsNumerator
     const enterEnd = enterStart + (enter * fpsDenominator) / fpsNumerator
     const exitStart = enterEnd + (hold * fpsDenominator) / fpsNumerator
     const exitEnd = exitStart + (exit * fpsDenominator) / fpsNumerator
@@ -281,6 +297,10 @@ export function buildCompositionGraph(plan, options) {
 
   // Transitions chain the scene streams together.
   let videoLabel = sceneLabels[0]
+  // `xfade`'s offset is measured on the ACCUMULATED stream, not on the incoming scene's own
+  // duration. Using the previous scene's local duration happened to be right for exactly one
+  // transition and cut every later one short (D3: 1464 declared frames rendered as 696).
+  let accumulatedFrames = layout.scenes[0].durationFrames
   for (let index = 1; index < sceneLabels.length; index += 1) {
     const transition = plan.transitions.find(
       (entry) => entry.fromScene === layout.scenes[index - 1].id && entry.toScene === layout.scenes[index].id,
@@ -288,10 +308,11 @@ export function buildCompositionGraph(plan, options) {
     const out = index === sceneLabels.length - 1 ? 'vjoined' : `vjoined_${index}`
     if (transition === undefined || transition.kind === 'cut') {
       chain.push(`[${videoLabel}][${sceneLabels[index]}]concat=n=2:v=1:a=0[${out}]`)
+      accumulatedFrames += layout.scenes[index].durationFrames
     } else {
       const overlapSeconds = seconds(transition.overlapFrames, fpsNumerator, fpsDenominator)
       const offsetSeconds = seconds(
-        layout.scenes[index - 1].durationFrames - transition.overlapFrames,
+        accumulatedFrames - transition.overlapFrames,
         fpsNumerator,
         fpsDenominator,
       )
@@ -299,6 +320,8 @@ export function buildCompositionGraph(plan, options) {
       chain.push(
         `[${videoLabel}][${sceneLabels[index]}]xfade=transition=${xfadeTransition}:duration=${overlapSeconds}:offset=${offsetSeconds}[${out}]`,
       )
+      // The joined stream now ends at (previous end) + (this scene) - (overlap).
+      accumulatedFrames += layout.scenes[index].durationFrames - transition.overlapFrames
     }
     videoLabel = out
   }

@@ -79,12 +79,25 @@ function SceneObject({ object, scene, plan }) {
 
   if (object.kind === 'video-source-with-offset' || object.kind === 'image') {
     const src = staticFile(params.staticPath)
+    // `box` positions the object inside the canvas; `fit` decides how the source fills that box.
+    // Before this, every image/video was pinned to inset:0 at 100%, so `box`/`scale`/`x`/`y` were
+    // silently ignored and cover vs contain rendered identical bytes (D1). With no box the object
+    // still fills the frame, which keeps existing plans rendering the same way.
+    const hasBox = object.box !== undefined && object.box !== null
+    const fit = params.fit ?? 'cover'
     const style = {
       position: 'absolute',
-      inset: 0,
-      width: '100%',
-      height: '100%',
-      objectFit: params.fit ?? 'cover',
+      ...(hasBox
+        ? {
+            left: object.box.x,
+            top: object.box.y,
+            width: object.box.width,
+            height: object.box.height,
+          }
+        : { inset: 0, width: '100%', height: '100%' }),
+      // `img` reads objectFit from style; `@remotion/media`'s Video only honours the PROP and warns
+      // that a style value is ignored — which is why cover/contain used to render identical bytes.
+      ...(object.kind === 'image' ? { objectFit: fit } : {}),
       opacity: (params.opacity ?? 1) * opacity,
     }
     if (object.kind === 'image') return <img src={src} alt="" style={style} />
@@ -93,6 +106,7 @@ function SceneObject({ object, scene, plan }) {
         src={src}
         trimBefore={object.authored?.sourceOffsetFrames ?? 0}
         muted
+        objectFit={fit}
         style={style}
         data-object-id={object.id}
       />
