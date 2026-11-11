@@ -315,6 +315,21 @@ function applySceneDuration(plan, intent, now, warnings) {
   const shiftedObjectIds = plan.objects
     .filter((entry) => laterScenes.includes(entry.sceneId))
     .map((entry) => entry.id)
+  // Movie-scope objects (`scope: 'movie'`, `sceneId: null`) can never match `laterScenes`, so the
+  // whole class used to be invisible to ripple detection: extending a scene moved every picture cut
+  // and left the audio bed where it was, with no warning at all (D6). They are deliberately NOT
+  // auto-shifted — their timeline is movie time and retiming audio by machine is worse than saying
+  // so — but they must be reported, so a human can decide.
+  const movieScopeAudioIds = plan.objects
+    .filter((entry) => (entry.scope ?? 'scene') === 'movie')
+    .filter((entry) => ['audio-continuous', 'audio'].includes(entry.kind))
+    .map((entry) => entry.id)
+  if (movieScopeAudioIds.length > 0) {
+    warnings.push(
+      `音轨事件仍停在旧切点：影片级音轨 ${movieScopeAudioIds.join('、')} 不随场景/转场变化自动迁移，` +
+        '需要人工确认或迁移后才能认为音画对齐',
+    )
+  }
   const objects = plan.objects.map((entry) => {
     if (!laterScenes.includes(entry.sceneId)) return entry
     return {
@@ -333,7 +348,6 @@ function applySceneDuration(plan, intent, now, warnings) {
       sceneId: intent.sceneId,
       from: scene.timeline.durationFrames,
       to: intent.durationFrames,
-      deltaFrames: delta,
       shiftedScenes: laterScenes,
       shiftedObjectIds,
     },

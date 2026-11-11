@@ -450,7 +450,16 @@ const Actions = {
       return
     }
     if (action === KEY_ACTIONS.ESCAPE) {
-      Store.set((current) => ({ ...current, modal: null, helpOpen: false, searchOpen: false, assistantOpen: false }))
+      // The right column is driven by `rightTab`, not by `assistantOpen`: clearing only the flag
+      // left the panel on screen and Esc looked broken (C16R §5.2). Close the panel itself.
+      Store.set((current) => ({
+        ...current,
+        modal: null,
+        helpOpen: false,
+        searchOpen: false,
+        assistantOpen: false,
+        rightTab: current.rightTab === 'assistant' ? 'properties' : current.rightTab,
+      }))
       return
     }
     if (action === KEY_ACTIONS.MARK_IN || action === KEY_ACTIONS.MARK_OUT || action === KEY_ACTIONS.ADD_MARKER) {
