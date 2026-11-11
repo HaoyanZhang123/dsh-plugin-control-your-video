@@ -31,6 +31,10 @@ UI与交互蓝图.md
 node_modules/
 **/node_modules/
 
+# 验收工程与隔离宿主：含会话数据、安装副本与渲染中间产物，绝不发布
+# （验收脚本本身也不入库；需要复跑时从交接包证据里取回）
+产品实现/acceptance/
+
 # 仓库根的散落生成物与脚手架
 gen-composition.mjs
 .commit-plan.sh

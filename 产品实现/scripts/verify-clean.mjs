@@ -27,7 +27,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
 
 /** Files and directories that constitute the reproducible project. */
-const INCLUDE = ['base', 'scripts', 'tests', 'docs', 'core', 'tools', 'media', 'orchestration', 'editing', 'ui', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'cordis.patch.yml', 'LICENSE', 'README.md']
+const INCLUDE = ['base', 'scripts', 'tests', 'docs', 'core', 'tools', 'media', 'orchestration', 'editing', 'delivery', 'ui', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'cordis.patch.yml', 'LICENSE', 'README.md']
 
 /**
  * Never copied: generated, machine-specific, or build output.

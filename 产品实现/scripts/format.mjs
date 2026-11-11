@@ -28,7 +28,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
 
 /** Directories included in formatting. */
-const TARGET_DIRS = ['base', 'scripts', 'tests', 'core', 'tools', 'media', 'orchestration', 'editing']
+const TARGET_DIRS = ['base', 'scripts', 'tests', 'core', 'tools', 'media', 'orchestration', 'editing', 'delivery']
 
 /** Root-level files included in formatting. */
 const TARGET_FILES = ['package.json', 'pnpm-workspace.yaml', 'cordis.patch.yml']

@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-control-your-video",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "AI video creation workbench for DeepSeek Harness: project, creation and work surfaces for open-ended video works.",
   "type": "module",
@@ -16,7 +16,8 @@
     "./tools": "./tools/index.js",
     "./media": "./media/index.js",
     "./orchestration": "./orchestration/index.js",
-    "./editing": "./editing/index.js"
+    "./editing": "./editing/index.js",
+    "./delivery": "./delivery/index.js"
   },
   "files": [
     "ui/host",
@@ -27,8 +28,10 @@
     "media/*.js",
     "media/render",
     "media/ops",
+    "media/templates",
     "orchestration/*.js",
     "editing/*.js",
+    "delivery/*.js",
     "base",
     "docs",
     "cordis.patch.yml",
