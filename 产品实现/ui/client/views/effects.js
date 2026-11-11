@@ -7,6 +7,27 @@
  * @module ui/client/views/effects
  */
 
+/**
+ * Mount whatever the delivery domain registered, on the effects page.
+ *
+ * The domain view is self-contained (its own event-stream read), so mounting it here adds no panel,
+ * no slot and no effect. When nothing is registered the mount says so instead of drawing an empty
+ * delivery list that looks operational.
+ */
+function DeliveryDomainMount() {
+  const registry = typeof DELIVERY_DOMAIN_REGISTRY === 'object' && DELIVERY_DOMAIN_REGISTRY !== null
+    ? DELIVERY_DOMAIN_REGISTRY
+    : { component: null }
+  if (typeof registry.component !== 'function') {
+    return h('div', { className: 'avw-card', id: 'avw-delivery-domain', style: { marginTop: '8px' } },
+      h('div', { className: 'avw-card__head' }, h('span', { className: 'avw-card__title' }, '交付、项目包、效果与结项')),
+      h('div', { className: 'avw-card__body' },
+        h('p', { className: 'avw-hint', style: { margin: 0 } }, '交付领域视图没有注册：这里不显示任何数据，也不画假按钮。')))
+  }
+  const Registered = registry.component
+  return h('div', { id: 'avw-delivery-domain', style: { marginTop: '8px' } }, h(Registered))
+}
+
 export function EffectsView() {
   const state = useStoreState()
   const effects = state.effects
@@ -31,6 +52,7 @@ export function EffectsView() {
             h('span', { className: 'side' }, h(Chip, null, effect.version ?? '未标版本'))))),
         h('div', { style: { marginTop: '12px' } },
           h(GapCard, { gap: INTEGRATION_GAPS.delivery })),
+        h(DeliveryDomainMount),
         h('p', { className: 'avw-hint' }, '正式效果文件、源码、必要输入和版本锁定会随效果包一起保留；源码本身不等于任何环境都能复现。')),
       h(Toast, { toast: state.toast })))
 }

@@ -680,7 +680,7 @@ const INTEGRATION_GAPS = Object.freeze({
   delivery: {
     owner: 'C15',
     title: '交付、项目包与结项',
-    message: '导出、项目包往返、效果库与结项清理由 C15 接入。',
+    message: '交付、项目包与结项的只读视图已接入；导出、确认与清理等可点操作仍未接入。',
   },
 })
 
@@ -2136,6 +2136,793 @@ function registerReviewDomain(ctx) {
   }
 }
 
+/* ---- client/domains/delivery/view.js ---- */
+/**
+ * Delivery domain view: the read-only projection of delivery, project packages, effects and closure.
+ *
+ * This component is PURE on purpose: it takes a `delivery.projection` payload (or an error) and
+ * renders it, so the same code can be mounted by the shell and rendered with real project data in
+ * evidence. It never invents a record, never writes anything, and never draws an enabled button for
+ * a capability that is not wired — export, scope confirmation and cleanup are shown as what they
+ * are (facts and gaps), not as clickable promises.
+ *
+ * @module ui/client/domains/delivery/view
+ */
+
+/** Delivery state label and tone. */
+const DELIVERY_STATE = Object.freeze({
+  planned: { label: '已计划，尚未导出', tone: 'warn' },
+  running: { label: '正在导出', tone: 'warn' },
+  complete: { label: '全部可用规格已导出并检查', tone: 'ok' },
+  partial: { label: '部分成功', tone: 'danger' },
+  failed: { label: '没有成功的规格', tone: 'danger' },
+})
+
+/** Item state label and tone. */
+const ITEM_STATE = Object.freeze({
+  planned: { label: '未导出', tone: 'default' },
+  exported: { label: '已导出并检查', tone: 'ok' },
+  failed: { label: '失败', tone: 'danger' },
+  'not-implemented': { label: '本卡不可用', tone: 'warn' },
+  skipped: { label: '跳过', tone: 'default' },
+})
+
+/** Closure step label. */
+const CLOSURE_STEP_LABEL = Object.freeze({
+  finalized: '1 用户验收定稿',
+  delivered: '2 成片与物料导出并检查',
+  'effects-decided': '3 效果处理',
+  'final-project': '4 最终可编辑工程检查',
+  'scope-shown': '5 展示清理范围',
+  'scope-confirmed': '6 用户确认范围',
+  cleaned: '7 执行清理',
+})
+
+/** Closure step status label and tone. */
+const STEP_TONE = Object.freeze({
+  passed: { label: '已通过', tone: 'ok' },
+  blocked: { label: '受阻', tone: 'danger' },
+  'waiting-user': { label: '等待你决定', tone: 'warn' },
+  pending: { label: '未开始', tone: 'default' },
+})
+
+/** Effect state label and tone. */
+const EFFECT_STATE = Object.freeze({
+  candidate: { label: '候选（未复现）', tone: 'warn' },
+  reproducing: { label: '正在空项目复现', tone: 'warn' },
+  reproduced: { label: '已复现', tone: 'ok' },
+  adopted: { label: '正式收录', tone: 'ok' },
+  'reproduce-failed': { label: '复现未通过', tone: 'danger' },
+  withdrawn: { label: '已下架', tone: 'default' },
+})
+
+/** One card section in the workbench rhythm. */
+function Section(props) {
+  return h('section', { className: 'avw-card', style: { marginBottom: '10px' } },
+    h('div', { className: 'avw-card__head' },
+      h('span', { className: 'avw-card__title' }, props.title),
+      props.note ? h('span', { className: 'avw-card__note' }, props.note) : null,
+      h('span', { className: 'avw-grow' })),
+    h('div', { className: 'avw-card__body', style: { display: 'grid', gap: '6px' } }, props.children))
+}
+
+/** A chip matching the design system. */
+function DomainChip(props) {
+  return h('span', { className: `avw-chip${props.tone ? ` avw-chip--${props.tone}` : ''}` }, props.text)
+}
+
+/** A key/value row. */
+function DomainKV(props) {
+  return h('div', { className: 'avw-kv' },
+    h('label', null, props.label),
+    h('span', { style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' } }, props.children))
+}
+
+/** A short honest sentence, used instead of an unimplemented control. */
+function Hint(props) {
+  return h('span', { className: 'avw-hint' }, props.text)
+}
+
+/** @param {unknown} bytes @returns {string} */
+function formatBytesLocal(bytes) {
+  const value = Number(bytes)
+  if (!Number.isFinite(value) || value <= 0) return '—'
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`
+  return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
+/** @param {unknown} size @returns {string} */
+function sizeText(item) {
+  if (item.width === null || item.width === undefined || item.height === null || item.height === undefined) return '规格未记录'
+  const duration = typeof item.durationSeconds === 'number' ? ` · ${item.durationSeconds.toFixed(3)}s` : ''
+  return `${item.width}×${item.height}${duration}`
+}
+
+/** @param {any} item */
+function ItemRow(item) {
+  const state = ITEM_STATE[item.state] ?? { label: String(item.state), tone: 'default' }
+  return h(DomainKV, { key: `${item.specId}-${item.kind}`, label: `${item.kind}` },
+    h('span', null, item.label ?? item.specId),
+    h(DomainChip, { text: state.label, tone: state.tone }),
+    h('span', { className: 'avw-hint' }, sizeText(item)),
+    item.fileName ? h('span', { className: 'avw-mono' }, item.fileName) : null,
+    item.bytes ? h('span', { className: 'avw-hint' }, formatBytesLocal(item.bytes)) : null,
+    item.external === true ? h(DomainChip, { text: '项目目录之外', tone: 'accent' }) : null,
+    item.checksOk === true ? h(DomainChip, { text: '检查通过', tone: 'ok' }) : null,
+    item.failure ? h('span', { className: 'avw-hint' }, `${item.failure.code}：${item.failure.message}`) : null,
+    item.adaptation
+      ? h('span', { className: 'avw-hint' },
+        `AdaptOperation ${item.adaptation.from.width}×${item.adaptation.from.height} → ` +
+        `${item.adaptation.to.width}×${item.adaptation.to.height} · 重排对象 ${item.adaptation.moves ?? 0} 个 · ` +
+        `字号 ${item.adaptation.resizes ?? 0} 个 · 字幕重排 ${item.adaptation.rewraps ?? 0} 个 · ` +
+        `${item.adaptation.notAStretch === true ? '对象级重排（非拉伸）' : '未证明非拉伸'}`)
+      : null,
+    (item.notes ?? []).length > 0 ? h(Hint, { text: item.notes.join('；') }) : null)
+}
+
+/** @param {any} props */
+function FinalSection(props) {
+  const finalVersion = props.finalVersion
+  const deliveries = props.deliveries ?? []
+  const rows = deliveries.length === 0
+    ? h(Hint, { text: '还没有交付记录。定稿之后才允许导出；这一页不会凭空显示文件。' })
+    : deliveries.map((delivery) => {
+      const state = DELIVERY_STATE[delivery.state] ?? { label: String(delivery.state), tone: 'default' }
+      return h('div', { key: delivery.deliveryId, style: { marginBottom: '10px' } },
+        h(DomainKV, { label: '交付' },
+          h('span', { className: 'avw-mono' }, delivery.deliveryId),
+          h(DomainChip, { text: state.label, tone: state.tone }),
+          h('span', { className: 'avw-hint' }, `同名处理 ${delivery.policy === 'refuse' ? '拒绝' : '另存新名字'}`),
+          delivery.counts ? h('span', { className: 'avw-hint' },
+            `共 ${delivery.counts.total ?? 0} 项：成功 ${delivery.counts.exported ?? 0}、失败 ${delivery.counts.failed ?? 0}、` +
+            `不可用 ${delivery.counts.notImplemented ?? 0}`) : null),
+        (delivery.items ?? []).map((item) => ItemRow(item)))
+    })
+  return h(Section, {
+    title: '定稿与成片交付',
+    note: finalVersion === null ? '尚未定稿' : `定稿 ${finalVersion.versionId}`,
+  },
+  h(DomainKV, { label: '定稿' },
+    finalVersion === null
+      ? h(Hint, { text: '还没有用户验收的定稿版本：导出与清理都不能开始。' })
+      : h('span', null, `${finalVersion.label ?? '定稿'} · ${String(finalVersion.confirmationRef ?? '')}`)),
+  h(Hint, { text: '导出成功不等于发布：这里没有上传、发布或账号动作。' }),
+  rows)
+}
+
+/** @param {any} props */
+function PackageSection(props) {
+  const packages = props.packages ?? []
+  const rows = packages.length === 0
+    ? h(Hint, { text: '还没有项目包记录。可编辑项目包与成片分开交付。' })
+    : packages.map((record) => h(DomainKV, { key: `${record.packageId}-${record.direction}`, label: record.direction === 'import' ? '导入' : '导出' },
+      h('span', { className: 'avw-mono' }, record.packageId),
+      h(DomainChip, { text: record.state ?? '未知', tone: record.state === 'imported' || record.state === 'exported' ? 'ok' : 'warn' }),
+      h('span', { className: 'avw-hint' }, `格式 v${String(record.formatVersion ?? '—')} · ${String(record.files ?? 0)} 个文件`),
+      record.folder ? h('span', { className: 'avw-mono' }, record.folder) : null,
+      record.bytes ? h('span', { className: 'avw-hint' }, formatBytesLocal(record.bytes)) : null,
+      record.at ? h('span', { className: 'avw-hint' }, record.at) : null))
+  return h(Section, { title: '可编辑项目包', note: `${packages.length} 条` },
+    rows,
+    h(Hint, { text: '导入检查完整性、哈希、同名与环境差异；包内源码从不自动执行，也不覆盖同名项目。' }))
+}
+
+/** @param {any} props */
+function EffectSection(props) {
+  const effects = props.effects
+  if (effects === null) {
+    return h(Section, { title: '正式效果库', note: '未提供效果库' },
+      h(Hint, { text: '这个项目没有接入效果库根目录：不显示任何效果，也不画假的收录按钮。' }))
+  }
+  const list = effects.effects ?? []
+  const rows = list.length === 0
+    ? h(Hint, { text: '还没有效果。候选要先在空项目复现通过，才能成为正式收录的效果。' })
+    : list.map((effect) => {
+      const state = EFFECT_STATE[effect.state] ?? { label: String(effect.state), tone: 'default' }
+      return h(DomainKV, { key: effect.effectId, label: effect.kind === 'sound' ? '声音效果' : '视觉效果' },
+        h('span', null, effect.name),
+        h(DomainChip, { text: state.label, tone: state.tone }),
+        h('span', { className: 'avw-hint' }, `版本 ${effect.version} · 被 ${effect.references ?? 0} 个项目引用`),
+        effect.reproducedAt ? h('span', { className: 'avw-hint' }, `复现于 ${effect.reproducedAt}`) : null)
+    })
+  const honest = effects.honest ?? {}
+  return h(Section, { title: '正式效果库', note: `${list.length} 个` },
+    rows,
+    h(Hint, { text: (effects.references ?? []).length > 0
+      ? `跨项目引用：${(effects.references ?? []).map((entry) => `${entry.effectId}@${entry.version}`).join('；')}`
+      : '这个项目还没有引用正式效果。' }),
+    h(Hint, { text: honest.note ?? '效果以声明式源文件复现，不执行任意源码；声音效果需要你实际听。' }))
+}
+
+/** @param {any} props */
+function ClosureSection(props) {
+  const closure = props.closure
+  if (closure === null) {
+    return h(Section, { title: '结项', note: '未开始' },
+      h(Hint, { text: '还没有结项记录。顺序固定：定稿 → 导出检查 → 效果处理 → 最终工程检查 → 展示范围 → 你确认 → 清理。' }))
+  }
+  const steps = (closure.steps ?? []).map((step) => {
+    const status = STEP_TONE[step.status] ?? { label: String(step.status), tone: 'default' }
+    return h(DomainKV, { key: step.id, label: CLOSURE_STEP_LABEL[step.id] ?? step.id },
+      h(DomainChip, { text: status.label, tone: status.tone }),
+      h(Hint, { text: step.detail ?? '' }))
+  })
+  const scope = closure.scope
+  const scopeLines = scope === null
+    ? h(Hint, { text: '还没有清理范围。生成范围需要前四步全部通过。' })
+    : h(React.Fragment, null,
+      h(DomainKV, { label: '清理范围' },
+        h('span', null, `${scope.remove} 项、约 ${formatBytesLocal(scope.totalBytes)}`),
+        h(DomainChip, { text: scope.digest ? `指纹 ${String(scope.digest).slice(0, 10)}…` : '无指纹', tone: 'accent' })),
+      (scope.entries ?? []).length === 0
+        ? h(Hint, { text: '这个范围里没有可删除条目。' })
+        : (scope.entries ?? []).map((entry, index) => h('span', { key: `${entry.path}-${index}`, className: 'avw-hint' },
+          `${entry.kind}：${entry.path}（${formatBytesLocal(entry.bytes)}）`)),
+      (scope.sharedReferences ?? []).length > 0
+        ? h(Hint, { text: `共享引用保留：${(scope.sharedReferences ?? []).map((entry) => `${entry.effectId}@${entry.version}`).join('；')}` })
+        : null)
+  return h(Section, { title: '结项与清理', note: closure.status === 'cleaned' ? '已清理' : closure.status === 'confirmed' ? '范围已确认' : '进行中' },
+    steps,
+    scopeLines,
+    closure.confirmation
+      ? h(DomainKV, { label: '你的确认' },
+        h('span', null, closure.confirmation.humanResponse ?? ''),
+        h('span', { className: 'avw-hint' }, closure.confirmation.at ?? ''))
+      : h(Hint, { text: '还没有你的确认：未回复就不删除任何历史。' }),
+    closure.cleanup
+      ? h(DomainKV, { label: '已清理' },
+        h('span', null, `删除 ${closure.cleanup.deleted} 项、释放 ${formatBytesLocal(closure.cleanup.bytesFreed)}`),
+        closure.cleanup.failures > 0 ? h(DomainChip, { text: `${closure.cleanup.failures} 项失败`, tone: 'danger' }) : null,
+        h(Hint, { text: '已删除历史不提供恢复入口，也不承诺找回。' }))
+      : null,
+    h(Hint, { text: '导出失败或最终工程缺件时不会生成可执行的清理范围；归档、回收区与永久删除是另外的确认步骤。' }))
+}
+
+/**
+ * The whole delivery domain view.
+ *
+ * @param {object} props
+ * @param {any} [props.projection] the newest `delivery.projection` payload
+ * @param {string} [props.error] why the projection could not be read
+ * @param {boolean} [props.loading]
+ * @param {string} [props.notice]
+ */
+function DeliveryDomainView(props) {
+  const projection = props.projection ?? null
+  const header = h('div', { className: 'avw-card__head' },
+    h('span', { className: 'avw-card__title' }, '交付、项目包、效果与结项（只读投影)'),
+    h(DomainChip, { text: '只读', tone: 'accent' }),
+    h('span', { className: 'avw-grow' }),
+    h('span', { className: 'avw-card__note' },
+      projection === null ? '等待投影' : `来源：项目事件 · ${projection.generatedAt}`))
+
+  if (props.loading === true) {
+    return h('div', { className: 'avw-card', id: 'avw-delivery-domain' }, header,
+      h('div', { className: 'avw-card__body' }, h(Hint, { text: '正在读取项目事件…' })))
+  }
+  if (typeof props.error === 'string' && props.error.length > 0) {
+    return h('div', { className: 'avw-card', id: 'avw-delivery-domain' }, header,
+      h('div', { className: 'avw-card__body' },
+        h('span', { className: 'avw-chip avw-chip--warn' }, '需要处理'),
+        h(Hint, { text: props.error })))
+  }
+  if (projection === null) {
+    return h('div', { className: 'avw-card', id: 'avw-delivery-domain' }, header,
+      h('div', { className: 'avw-card__body' },
+        h(Hint, { text: '这个项目还没有交付投影。投影由交付模块在事实变化后发布；界面不会凭空造一份。' }),
+        props.notice ? h(Hint, { text: props.notice }) : null))
+  }
+
+  const honest = projection.honest ?? {}
+  return h('div', { className: 'avw-card', id: 'avw-delivery-domain' },
+    header,
+    h('div', { className: 'avw-card__body', style: { display: 'grid', gap: '10px' } },
+      h(FinalSection, {
+        finalVersion: projection.finalVersion ?? null,
+        deliveries: projection.deliveries ?? [],
+      }),
+      h(PackageSection, { packages: projection.packages ?? [] }),
+      h(EffectSection, { effects: projection.effects ?? null }),
+      h(ClosureSection, { closure: projection.closure ?? null }),
+      h('div', { className: 'avw-gap' },
+        h('b', null, '仍未接入：可点操作与真实交互'),
+        h('div', null, '这一页是只读投影：导出按钮、范围确认与清理执行都要接上真实交互后才出现；这里不画假按钮。'),
+        h(Hint, { text: honest.note ?? '' }),
+        h(Hint, { text: 'AI 看／听：未看、未听；程序检查不等于用户验收。' }))))
+}
+
+/* ---- client/domains/delivery/index.js ---- */
+/**
+ * Mounting and registration of the delivery domain view.
+ *
+ * The view reads ONE thing: the newest `delivery.projection` in the project's own event stream,
+ * through the route the workbench already exposes (`/projects/events`). No new host route, no second
+ * fact source, no write.
+ *
+ * Registration is deliberately a shell-held registry, exactly like the creation and review domains:
+ * the surface decision belongs to C11/总控, so this card adds no panel, no navigation entry and no
+ * tenth effect. A refused registration is reported instead of hidden.
+ *
+ * @module ui/client/domains/delivery/index
+ */
+
+/** The shell-held registry this domain registers into. */
+const DELIVERY_DOMAIN_REGISTRY = { component: null, mountedAt: null }
+
+/** The client-side matcher for the event kind C15 publishes. */
+const DELIVERY_PROJECTION_KIND = 'delivery.projection'
+
+/**
+ * Find the newest delivery projection in a list of project events.
+ * @param {any[]} events
+ * @returns {any|null}
+ */
+function newestDeliveryProjection(events) {
+  if (!Array.isArray(events)) return null
+  let latest = null
+  let latestSequence = -1
+  for (const event of events) {
+    if (event?.kind !== DELIVERY_PROJECTION_KIND) continue
+    if (event.detail === null || typeof event.detail !== 'object') continue
+    // `/projects/events` answers newest-first; the sequence, not the array position, decides.
+    const sequence = Number.isInteger(event.sequence) ? event.sequence : Number.MAX_SAFE_INTEGER
+    if (sequence >= latestSequence) {
+      latestSequence = sequence
+      latest = event.detail
+    }
+  }
+  return latest
+}
+
+/** The section the shell renders once it has a mounting surface. */
+function DeliveryDomainSection() {
+  const state = useStoreState()
+  const projectId = state.projectId ?? state.project?.project?.projectId ?? null
+  const [read, setRead] = React.useState({ loading: projectId !== null, projection: null, error: null })
+
+  React.useEffect(() => {
+    if (projectId === null) {
+      setRead({ loading: false, projection: null, error: null })
+      return undefined
+    }
+    let cancelled = false
+    setRead((current) => ({ ...current, loading: true }))
+    Api.events(projectId, 200)
+      .then((payload) => {
+        if (cancelled) return
+        const events = Array.isArray(payload) ? payload : (payload?.events ?? [])
+        setRead({ loading: false, projection: newestDeliveryProjection(events), error: null })
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setRead({ loading: false, projection: null, error: `读取项目事件失败：${error?.message ?? error}` })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId])
+
+  return h(DeliveryDomainView, {
+    loading: read.loading,
+    projection: read.projection,
+    error: read.error,
+    notice: '只读投影：数据来自项目事件流；导出、确认与清理要接上真实交互后才出现。',
+  })
+}
+
+/**
+ * Set the delivery domain into the shell registry, once, through an effect the shell can dispose.
+ *
+ * @param {any} ctx the Host plugin context
+ * @returns {{ status: {mode: string, registered: boolean, reason: string|null}, dispose: () => void }}
+ */
+function registerDeliveryDomain(ctx) {
+  const status = { mode: 'shell-registry', registered: false, reason: null }
+  if (ctx === null || typeof ctx !== 'object') {
+    status.reason = '没有 Host 上下文'
+    return { status, dispose: () => {} }
+  }
+  DELIVERY_DOMAIN_REGISTRY.component = DeliveryDomainSection
+  DELIVERY_DOMAIN_REGISTRY.mountedAt = new Date().toISOString()
+  status.registered = true
+  return {
+    status,
+    dispose: () => {
+      // Disposing removes THIS registration and nothing else; a later registration is untouched.
+      if (DELIVERY_DOMAIN_REGISTRY.component === DeliveryDomainSection) {
+        DELIVERY_DOMAIN_REGISTRY.component = null
+        DELIVERY_DOMAIN_REGISTRY.mountedAt = null
+      }
+    },
+  }
+}
+
+/* ---- client/domains/realwork/snapshot.js ---- */
+/**
+ * GENERATED FILE — do not edit.
+ *
+ * Produced by 产品实现/acceptance/real-work/scripts/embed-snapshot.mjs from the evidence JSON in
+ * 实施交接/证据/C15R-证据/. Every number below is copied from a measured file listed in
+ * `sources`; re-run the generator after re-measuring instead of editing this file.
+ */
+
+const REALWORK_SNAPSHOT = {
+  "kind": "c15r-realwork-snapshot",
+  "generatedAt": "2026-11-10T14:20:00.000Z",
+  "generator": "产品实现/acceptance/real-work/scripts/embed-snapshot.mjs",
+  "sources": [
+    {
+      "file": "05-完整初版/render-result-v1.json",
+      "bytes": 5132,
+      "sha256": "36d5ed7957b5b7436672bc4f93658f8d1f00173617548c994014ebf31380d6cf"
+    },
+    {
+      "file": "05-完整初版/measurement-v1.json",
+      "bytes": 7746,
+      "sha256": "aa849ad6cf8a3aab4b959933e26eab8f8343c5eba6349997f56c45fd4f459cf4"
+    },
+    {
+      "file": "06-局部修改/measurement-rule4-late2-v1.json",
+      "bytes": 7765,
+      "sha256": "d1ba969f8a141d1aeed1d037204c64d430549bcaf87f019187f4d6a80bf4b214"
+    },
+    {
+      "file": "06-局部修改/comparison-rule4-late2.json",
+      "bytes": 19894,
+      "sha256": "872430a39e4ab1b4d586c0a36bbad0e87b2188eb4557b42e693e7c3ab9a5a74a"
+    },
+    {
+      "file": "06-局部修改/still-comparison.json",
+      "bytes": 8680,
+      "sha256": "ecc8da2e426ac2a9cc3e026926bf6f1d8cf191e0356c0f7fe7802b7d35dbf399"
+    },
+    {
+      "file": "06-局部修改/click-onset-control.json",
+      "bytes": 3838,
+      "sha256": "d586af1227ef011820ae1d8abd1a645f891e8e68faf4d7b945db1aaf4395d425"
+    },
+    {
+      "file": "产品实现/acceptance/real-work/project/audio/c15r-score.events.json",
+      "bytes": 5130,
+      "sha256": "31320d6236e0b18074327df5f11b2a04948447d27227f653e6cfa4c192b39947"
+    },
+    {
+      "file": "08-交付/交付清单.json",
+      "bytes": 4052,
+      "sha256": "cc775118ae816b922ca206f0685d62d836cb706e799b53f5b8d61bf27d5f805d"
+    }
+  ],
+  "film": {
+    "title": "《起／落》",
+    "palette": "黑 #000000 ／ 米白 #F2EDE3",
+    "font": "Noto Serif SC",
+    "fontLicense": "SIL OFL 1.1",
+    "runtime": "Remotion 4.0.541",
+    "runtimeNote": "FFmpeg 适配器在本片暴露两处限制（场景 alpha 时间基准、多转场偏移），换用已注册的 Remotion，未改 C12",
+    "planVersion": "direction-b-1.0.1-rule4-late2",
+    "accepted": true
+  },
+  "spec": {
+    "totalFrames": 360,
+    "width": 1920,
+    "height": 1080,
+    "fps": "30/1",
+    "videoCodec": "h264",
+    "pixelFormat": "yuv420p",
+    "videoStreamSeconds": 12,
+    "containerSeconds": 12.011,
+    "audioCodec": "aac",
+    "audioSampleRate": 48000,
+    "audioChannels": 2,
+    "videoSha256": "5798df8642d7b02511e1ccbb2cda02ae75d6b54af7000eb6452d7ef4a20104eb",
+    "videoBytes": 570338
+  },
+  "toleranceFrames": 1,
+  "maxAbsDeltaFrames": 0.149,
+  "encodeDelayFrames": 0,
+  "rules": [
+    {
+      "objectId": "obj-s2-rule1",
+      "measuredFirstVisibleFrame": 91,
+      "clickOnsetFrame": 91.149,
+      "deltaFrames": 0.149
+    },
+    {
+      "objectId": "obj-s2-rule2",
+      "measuredFirstVisibleFrame": 113,
+      "clickOnsetFrame": 113.149,
+      "deltaFrames": 0.149
+    },
+    {
+      "objectId": "obj-s2-rule3",
+      "measuredFirstVisibleFrame": 136,
+      "clickOnsetFrame": 136.149,
+      "deltaFrames": 0.149
+    },
+    {
+      "objectId": "obj-s2-rule4",
+      "measuredFirstVisibleFrame": 160,
+      "clickOnsetFrame": 160.149,
+      "deltaFrames": 0.149
+    }
+  ],
+  "repair": {
+    "request": "第四条线晚 2 帧；该声点击同步后移 2 帧，保持同帧对齐",
+    "planVersionFrom": "direction-b-1.0.0",
+    "planVersionTo": "direction-b-1.0.1-rule4-late2",
+    "changedFrames": [
+      158,
+      159,
+      160,
+      161,
+      163,
+      164
+    ],
+    "targetVisibleSharePercent": 6.286,
+    "othersVisibleSharePercent": 0.196,
+    "audioNote": "源 WAV 只有两段差异（旧点击与新点击各 60ms）；编码后点击落点相对源 WAV 移动 0 帧",
+    "accepted": true,
+    "acceptanceQuote": "接受",
+    "acceptedAt": "2026-11-10T18:49:54+08:00",
+    "deliveredFile": "实施交接/证据/C15R-证据/08-交付/C15R-起落-12s-定稿-v1.mp4"
+  },
+  "observation": {
+    "saw": true,
+    "viewedFrames": "逐张放大：第 45、81、93、159、216、294 帧；另看 12／16 格接触表与波形图",
+    "heard": "未听：宿主没有听辨通道，波形只证明有四声点击与包络，不证明听感",
+    "notVerified": [
+      "整片连续播放的流畅度",
+      "音频听感与响度",
+      "其他机器上的渲染一致性"
+    ]
+  },
+  "planNotes": {
+    "scenes": [
+      {
+        "id": "s1",
+        "startFrame": 0,
+        "durationFrames": 90
+      },
+      {
+        "id": "s2",
+        "startFrame": 90,
+        "durationFrames": 90
+      },
+      {
+        "id": "s3",
+        "startFrame": 180,
+        "durationFrames": 90
+      },
+      {
+        "id": "s4",
+        "startFrame": 270,
+        "durationFrames": 90
+      }
+    ],
+    "repairPlanVersion": "direction-b-1.0.1-rule4-late2"
+  }
+}
+
+/* ---- client/domains/realwork/view.js ---- */
+/**
+ * Real-work domain view: what the C15R film actually is, measured.
+ *
+ * This page exists because C10–C15 shipped technical fixtures: they proved the pipeline, not that
+ * the product can make something worth watching. C15R made one real 12-second piece, and this view
+ * is the honest read-only record of it — spec, timing, the four measured line/click alignments, the
+ * one local repair, and exactly what the AI looked at and never heard.
+ *
+ * Data comes from `snapshot.js`, which is GENERATED from the evidence JSON in
+ * `实施交接/证据/C15R-证据/` by `产品实现/acceptance/real-work/scripts/embed-snapshot.mjs`. It is never
+ * hand-edited, so a number here cannot drift away from the file that measured it. When the snapshot
+ * is missing or stale the view says so instead of showing a plausible-looking table.
+ *
+ * @module ui/client/domains/realwork/view
+ */
+
+/** A section in the workbench's own card rhythm. */
+function RealworkSection(props) {
+  return h('section', { className: 'avw-card', style: { marginBottom: '10px' } },
+    h('div', { className: 'avw-card__head' },
+      h('span', { className: 'avw-card__title' }, props.title),
+      props.note ? h('span', { className: 'avw-card__note' }, props.note) : null,
+      h('span', { className: 'avw-grow' })),
+    h('div', { className: 'avw-card__body', style: { display: 'grid', gap: '6px' } }, props.children))
+}
+
+/** A chip matching the design system. */
+function RealworkChip(props) {
+  return h('span', { className: `avw-chip${props.tone ? ` avw-chip--${props.tone}` : ''}` }, props.text)
+}
+
+/** One two-column row. */
+function RealworkKV(props) {
+  return h('div', { className: 'avw-kv' },
+    h('label', null, props.label),
+    h('span', { style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' } }, props.children))
+}
+
+/** Whether a measurement row passed its own tolerance. */
+function passTone(ok) {
+  return ok === true ? 'ok' : ok === false ? 'danger' : 'warn'
+}
+
+/**
+ * The whole domain view.
+ *
+ * @param {object} props
+ * @param {any} [props.snapshot] the generated measurement snapshot
+ * @param {string} [props.error] why the snapshot is unusable
+ * @param {string} [props.notice] a standing note
+ */
+function RealworkDomainView(props) {
+  const snapshot = props.snapshot ?? null
+  const header = h('div', { className: 'avw-card__head' },
+    h('span', { className: 'avw-card__title' }, '真实作品视图'),
+
+    h(RealworkChip, { text: '只读', tone: 'accent' }),
+    h('span', { className: 'avw-grow' }),
+    h('span', { className: 'avw-card__note' },
+      snapshot === null ? '没有证据快照' : `快照生成于 ${snapshot.generatedAt}`))
+
+  if (typeof props.error === 'string' && props.error.length > 0) {
+    return h('div', { className: 'avw-card' }, header,
+      h('div', { className: 'avw-card__body' },
+        h(RealworkChip, { text: '需要处理', tone: 'warn' }),
+        h('span', { className: 'avw-hint' }, props.error)))
+  }
+  if (snapshot === null) {
+    return h('div', { className: 'avw-card' }, header,
+      h('div', { className: 'avw-card__body' },
+        h('span', { className: 'avw-hint' }, '没有真实作品证据快照：这里不显示任何数字。'),
+        props.notice ? h('span', { className: 'avw-hint' }, props.notice) : null))
+  }
+
+  const film = snapshot.film ?? {}
+  const spec = snapshot.spec ?? {}
+  const rules = snapshot.rules ?? []
+  const repair = snapshot.repair ?? null
+  const observation = snapshot.observation ?? {}
+
+  return h('div', { className: 'avw-realwork-domain' },
+    h('div', { className: 'avw-card__head', style: { padding: '0 2px 6px' } },
+      h('span', { className: 'avw-card__title' }, '真实作品视图'),
+      h(RealworkChip, { text: '只读', tone: 'accent' }),
+      h('span', { className: 'avw-grow' }),
+      h('span', { className: 'avw-card__note' }, `快照生成于 ${snapshot.generatedAt}`)),
+    h(RealworkSection, { title: '作品', note: film.title ?? '—' },
+      h(RealworkKV, { label: '成片' },
+        h(RealworkChip, { text: `${spec.totalFrames} 帧`, tone: 'accent' }),
+        h('span', { className: 'avw-mono' }, `${spec.width}×${spec.height} · ${spec.fps} fps · ${spec.videoCodec} · ${spec.pixelFormat}`),
+        h('span', { className: 'avw-hint' }, `视频流 ${spec.videoStreamSeconds}s；容器 ${spec.containerSeconds}s（差值是 AAC 尾部填充，不是画面帧）`)),
+      h(RealworkKV, { label: '声音' },
+        h(RealworkChip, { text: '程序合成', tone: 'ok' }),
+        h('span', { className: 'avw-hint' }, `FFmpeg 噪声床＋四声点击＋下行音；${spec.audioCodec} ${spec.audioSampleRate} Hz ${spec.audioChannels} ch；两次渲染哈希一致`)),
+      h(RealworkKV, { label: '颜色与字体' },
+        h('span', { className: 'avw-hint' }, `${film.palette ?? '—'}；${film.font ?? '—'}（${film.fontLicense ?? '许可未记录'}）`)),
+      h(RealworkKV, { label: '运行时' },
+        h('span', { className: 'avw-mono' }, `${film.runtime ?? '—'}`),
+        h('span', { className: 'avw-hint' }, film.runtimeNote ?? ''))),
+
+    h(RealworkSection, { title: '四条线与点击对齐', note: `容差 ${snapshot.toleranceFrames} 帧` },
+      rules.map((rule) => h(RealworkKV, { key: rule.objectId, label: rule.objectId },
+        h('span', null, `可见帧 ${rule.measuredFirstVisibleFrame}`),
+        h('span', { className: 'avw-mono' }, `点击 ${rule.clickOnsetFrame} 帧`),
+        h(RealworkChip, {
+          text: `Δ ${rule.deltaFrames} 帧`,
+          tone: passTone(Math.abs(rule.deltaFrames ?? 99) <= (snapshot.toleranceFrames ?? 1)),
+        }))),
+      h('span', { className: 'avw-hint' },
+        `最大绝对误差 ${snapshot.maxAbsDeltaFrames} 帧；检测器在源 WAV 与编码后 MP4 上的读数相差 ${snapshot.encodeDelayFrames} 帧，说明编码没有移动点击。`)),
+
+    h(RealworkSection, { title: '一处真实局部修改', note: repair === null ? '未做' : `${repair.planVersionFrom} → ${repair.planVersionTo}` },
+      repair === null
+        ? h('span', { className: 'avw-hint' }, '本轮还没有做局部修改。')
+        : h('div', null,
+          h(RealworkKV, { label: '请求' }, h('span', null, repair.request)),
+          h(RealworkKV, { label: '内容改动' },
+            h(RealworkChip, { text: `内容变化帧 ${repair.changedFrames.join('/')}`, tone: 'ok' }),
+            h('span', { className: 'avw-hint' }, '由不经编码的逐像素对照得出')),
+          h(RealworkKV, { label: '编码后像素' },
+            h('span', { className: 'avw-hint' },
+              `目标线 ${repair.targetVisibleSharePercent}% 像素变化；其余区域上限 ${repair.othersVisibleSharePercent}%（H.264 同 GOP 内的重量化漂移）`)),
+          h(RealworkKV, { label: '音频' },
+            h('span', { className: 'avw-hint' }, repair.audioNote)),
+          h(RealworkKV, { label: '用户接受' },
+            h(RealworkChip, { text: repair.accepted === true ? '已接受' : '未接受', tone: repair.accepted === true ? 'ok' : 'warn' }),
+            repair.accepted === true
+              ? h('span', { className: 'avw-hint' }, `${repair.acceptedAt ?? ''} 用户回复「${repair.acceptanceQuote ?? ''}」；接受对象是这一候选版本`)
+              : h('span', { className: 'avw-hint' }, '候选尚未被接受时不计为定稿')))),
+
+    h(RealworkSection, { title: 'AI 实际看／听' },
+      h(RealworkKV, { label: '画面' },
+        h(RealworkChip, { text: observation.saw === true ? '看过' : '未看', tone: observation.saw === true ? 'ok' : 'warn' }),
+        h('span', { className: 'avw-hint' }, observation.viewedFrames ?? '')),
+      h(RealworkKV, { label: '声音' },
+        h(RealworkChip, { text: '未听', tone: 'warn' }),
+        h('span', { className: 'avw-hint' }, observation.heard ?? '宿主没有听辨通道；听感只能由用户判断')),
+      h('span', { className: 'avw-hint' }, `未验证：${(observation.notVerified ?? []).join('；')}`)),
+
+    props.notice ? h('span', { className: 'avw-hint' }, props.notice) : null)
+}
+
+/* ---- client/domains/realwork/index.js ---- */
+/**
+ * Registration of the real-work domain view.
+ *
+ * Same shape as the creation, review and delivery domains: a shell-held registry entry, created
+ * once and disposed by the effect that created it. It adds no panel, no navigation entry and no
+ * tenth shell effect — the surface decision stays with C11/总控, per CT-00 §5.1.
+ *
+ * The view reads a generated snapshot (see `snapshot.js`), not the live project store: this round
+ * produced a film and its measurements, not a project with editable states. Wrapping measured
+ * evidence in a fake editable project would be worse than saying "this is a record".
+ *
+ * @module ui/client/domains/realwork/index
+ */
+
+/** The shell-held registry this domain registers into. */
+const REALWORK_DOMAIN_REGISTRY = { component: null, mountedAt: null }
+
+/**
+ * Read the generated snapshot.
+ *
+ * `REALWORK_SNAPSHOT` is a build-time constant produced by
+ * `产品实现/acceptance/real-work/scripts/embed-snapshot.mjs` from the evidence JSON. It is null when
+ * the generator could not find the measurements, and the view then reports that instead of a
+ * plausible table.
+ *
+ * @returns {{ snapshot: any, error: string|null }}
+ */
+function readRealworkSnapshot() {
+  if (typeof REALWORK_SNAPSHOT === 'undefined' || REALWORK_SNAPSHOT === null) {
+    return { snapshot: null, error: null }
+  }
+  if (REALWORK_SNAPSHOT.kind !== 'c15r-realwork-snapshot') {
+    return { snapshot: null, error: `快照种类不符：${String(REALWORK_SNAPSHOT.kind)}` }
+  }
+  return { snapshot: REALWORK_SNAPSHOT, error: null }
+}
+
+/** The section the shell renders once it mounts this domain. */
+function RealworkDomainSection() {
+  const read = readRealworkSnapshot()
+  return h(RealworkDomainView, {
+    snapshot: read.snapshot,
+    error: read.error,
+    notice: '只读记录：数字来自 `实施交接/证据/C15R-证据/` 的实测文件，由生成脚本写入，不在此处编辑。',
+  })
+}
+
+/**
+ * Put the domain into the shell registry once, through a disposal path the shell owns.
+ *
+ * @param {any} ctx the Host plugin context
+ * @returns {{ status: {mode: string, registered: boolean, reason: string|null}, dispose: () => void }}
+ */
+function registerRealworkDomain(ctx) {
+  const status = { mode: 'shell-registry', registered: false, reason: null }
+  if (ctx === null || typeof ctx !== 'object') {
+    status.reason = '没有 Host 上下文'
+    return { status, dispose: () => {} }
+  }
+  REALWORK_DOMAIN_REGISTRY.component = RealworkDomainSection
+  REALWORK_DOMAIN_REGISTRY.mountedAt = new Date().toISOString()
+  status.registered = true
+  return {
+    status,
+    dispose: () => {
+      // Disposing removes THIS registration and nothing else.
+      if (REALWORK_DOMAIN_REGISTRY.component === RealworkDomainSection) {
+        REALWORK_DOMAIN_REGISTRY.component = null
+        REALWORK_DOMAIN_REGISTRY.mountedAt = null
+      }
+    },
+  }
+}
+
 /* ---- client/hooks.js ---- */
 /**
  * Store binding for React components.
@@ -2612,7 +3399,16 @@ const Actions = {
       return
     }
     if (action === KEY_ACTIONS.ESCAPE) {
-      Store.set((current) => ({ ...current, modal: null, helpOpen: false, searchOpen: false, assistantOpen: false }))
+      // The right column is driven by `rightTab`, not by `assistantOpen`: clearing only the flag
+      // left the panel on screen and Esc looked broken (C16R §5.2). Close the panel itself.
+      Store.set((current) => ({
+        ...current,
+        modal: null,
+        helpOpen: false,
+        searchOpen: false,
+        assistantOpen: false,
+        rightTab: current.rightTab === 'assistant' ? 'properties' : current.rightTab,
+      }))
       return
     }
     if (action === KEY_ACTIONS.MARK_IN || action === KEY_ACTIONS.MARK_OUT || action === KEY_ACTIONS.ADD_MARKER) {
@@ -3412,6 +4208,27 @@ function CreationDomainMount() {
   return h('div', { id: 'avw-creation-domain', style: { marginTop: '14px' } }, h(Registered))
 }
 
+/**
+ * Mount whatever the real-work domain registered, or say plainly that nothing is registered.
+ *
+ * Same shape as the other domain mounts: self-contained component, no panel, no slot, no effect.
+ * It sits on this page because a finished film is a creation result; the numbers come from the
+ * generated snapshot, not from this page.
+ */
+function RealworkDomainMount() {
+  const registry = typeof REALWORK_DOMAIN_REGISTRY === 'object' && REALWORK_DOMAIN_REGISTRY !== null
+    ? REALWORK_DOMAIN_REGISTRY
+    : { component: null }
+  if (typeof registry.component !== 'function') {
+    return h('div', { className: 'avw-card', id: 'avw-realwork-domain', style: { marginTop: '14px' } },
+      h('div', { className: 'avw-card__head' }, h('span', { className: 'avw-card__title' }, '真实作品视图')),
+      h('div', { className: 'avw-card__body' },
+        h('p', { className: 'avw-hint', style: { margin: 0 } }, '真实作品领域视图没有注册：这里不显示任何数字，也不画假进度。')))
+  }
+  const Registered = registry.component
+  return h('div', { id: 'avw-realwork-domain', style: { marginTop: '14px' } }, h(Registered))
+}
+
 function CreationCenter() {
   const state = useStoreState()
   return h('section', { className: 'avw-col avw-col--center' },
@@ -3420,6 +4237,7 @@ function CreationCenter() {
         h(BriefSection),
         h(MaterialsSection),
         h(CreationDomainMount),
+        h(RealworkDomainMount),
         h(PartialIntegrationNote))))
 }
 
@@ -3849,6 +4667,27 @@ function PreferencesView() {
  * @module ui/client/views/effects
  */
 
+/**
+ * Mount whatever the delivery domain registered, on the effects page.
+ *
+ * The domain view is self-contained (its own event-stream read), so mounting it here adds no panel,
+ * no slot and no effect. When nothing is registered the mount says so instead of drawing an empty
+ * delivery list that looks operational.
+ */
+function DeliveryDomainMount() {
+  const registry = typeof DELIVERY_DOMAIN_REGISTRY === 'object' && DELIVERY_DOMAIN_REGISTRY !== null
+    ? DELIVERY_DOMAIN_REGISTRY
+    : { component: null }
+  if (typeof registry.component !== 'function') {
+    return h('div', { className: 'avw-card', id: 'avw-delivery-domain', style: { marginTop: '8px' } },
+      h('div', { className: 'avw-card__head' }, h('span', { className: 'avw-card__title' }, '交付、项目包、效果与结项')),
+      h('div', { className: 'avw-card__body' },
+        h('p', { className: 'avw-hint', style: { margin: 0 } }, '交付领域视图没有注册：这里不显示任何数据，也不画假按钮。')))
+  }
+  const Registered = registry.component
+  return h('div', { id: 'avw-delivery-domain', style: { marginTop: '8px' } }, h(Registered))
+}
+
 function EffectsView() {
   const state = useStoreState()
   const effects = state.effects
@@ -3873,6 +4712,7 @@ function EffectsView() {
             h('span', { className: 'side' }, h(Chip, null, effect.version ?? '未标版本'))))),
         h('div', { style: { marginTop: '12px' } },
           h(GapCard, { gap: INTEGRATION_GAPS.delivery })),
+        h(DeliveryDomainMount),
         h('p', { className: 'avw-hint' }, '正式效果文件、源码、必要输入和版本锁定会随效果包一起保留；源码本身不等于任何环境都能复现。')),
       h(Toast, { toast: state.toast })))
 }
@@ -4009,12 +4849,18 @@ function registerShellAdditions(ctx) {
   const disposeStyle = ensureStyle()
   const domain = registerCreationDomain(ctx)
   const review = registerReviewDomain(ctx)
+  const delivery = registerDeliveryDomain(ctx)
+  const realwork = registerRealworkDomain(ctx)
   // Evidence hook: the isolation walkthrough reads this to prove the registration is STATED.
   if (typeof window !== 'undefined') window.__avwCreationDomain = domain.status
   if (typeof window !== 'undefined') window.__avwReviewDomain = review.status
+  if (typeof window !== 'undefined') window.__avwDeliveryDomain = delivery.status
+  if (typeof window !== 'undefined') window.__avwRealworkDomain = realwork.status
   return () => {
     domain.dispose()
     review.dispose()
+    delivery.dispose()
+    realwork.dispose()
     disposeStyle()
   }
 }
@@ -4040,6 +4886,17 @@ const AVW_PLUGIN = {
     registerReviewDomain,
     newestEditingProjection,
     ReviewDomainMount,
+    DeliveryDomainView,
+    DeliveryDomainSection,
+    DELIVERY_DOMAIN_REGISTRY,
+    registerDeliveryDomain,
+    newestDeliveryProjection,
+    DeliveryDomainMount,
+    RealworkDomainView,
+    RealworkDomainSection,
+    REALWORK_DOMAIN_REGISTRY,
+    registerRealworkDomain,
+    RealworkDomainMount,
   },
   apply(ctx) {
     ctx.effect(() => registerShellAdditions(ctx), 'ai-video-workbench: design system stylesheet')

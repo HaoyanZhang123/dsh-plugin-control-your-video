@@ -135,7 +135,7 @@ export const INTEGRATION_GAPS = Object.freeze({
   delivery: {
     owner: 'C15',
     title: '交付、项目包与结项',
-    message: '导出、项目包往返、效果库与结项清理由 C15 接入。',
+    message: '交付、项目包与结项的只读视图已接入；导出、确认与清理等可点操作仍未接入。',
   },
 })
 

@@ -129,12 +129,18 @@ function registerShellAdditions(ctx) {
   const disposeStyle = ensureStyle()
   const domain = registerCreationDomain(ctx)
   const review = registerReviewDomain(ctx)
+  const delivery = registerDeliveryDomain(ctx)
+  const realwork = registerRealworkDomain(ctx)
   // Evidence hook: the isolation walkthrough reads this to prove the registration is STATED.
   if (typeof window !== 'undefined') window.__avwCreationDomain = domain.status
   if (typeof window !== 'undefined') window.__avwReviewDomain = review.status
+  if (typeof window !== 'undefined') window.__avwDeliveryDomain = delivery.status
+  if (typeof window !== 'undefined') window.__avwRealworkDomain = realwork.status
   return () => {
     domain.dispose()
     review.dispose()
+    delivery.dispose()
+    realwork.dispose()
     disposeStyle()
   }
 }
@@ -160,6 +166,17 @@ const AVW_PLUGIN = {
     registerReviewDomain,
     newestEditingProjection,
     ReviewDomainMount,
+    DeliveryDomainView,
+    DeliveryDomainSection,
+    DELIVERY_DOMAIN_REGISTRY,
+    registerDeliveryDomain,
+    newestDeliveryProjection,
+    DeliveryDomainMount,
+    RealworkDomainView,
+    RealworkDomainSection,
+    REALWORK_DOMAIN_REGISTRY,
+    registerRealworkDomain,
+    RealworkDomainMount,
   },
   apply(ctx) {
     ctx.effect(() => registerShellAdditions(ctx), 'ai-video-workbench: design system stylesheet')

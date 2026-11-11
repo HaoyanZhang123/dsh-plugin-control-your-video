@@ -180,6 +180,27 @@ function CreationDomainMount() {
   return h('div', { id: 'avw-creation-domain', style: { marginTop: '14px' } }, h(Registered))
 }
 
+/**
+ * Mount whatever the real-work domain registered, or say plainly that nothing is registered.
+ *
+ * Same shape as the other domain mounts: self-contained component, no panel, no slot, no effect.
+ * It sits on this page because a finished film is a creation result; the numbers come from the
+ * generated snapshot, not from this page.
+ */
+function RealworkDomainMount() {
+  const registry = typeof REALWORK_DOMAIN_REGISTRY === 'object' && REALWORK_DOMAIN_REGISTRY !== null
+    ? REALWORK_DOMAIN_REGISTRY
+    : { component: null }
+  if (typeof registry.component !== 'function') {
+    return h('div', { className: 'avw-card', id: 'avw-realwork-domain', style: { marginTop: '14px' } },
+      h('div', { className: 'avw-card__head' }, h('span', { className: 'avw-card__title' }, '真实作品视图')),
+      h('div', { className: 'avw-card__body' },
+        h('p', { className: 'avw-hint', style: { margin: 0 } }, '真实作品领域视图没有注册：这里不显示任何数字，也不画假进度。')))
+  }
+  const Registered = registry.component
+  return h('div', { id: 'avw-realwork-domain', style: { marginTop: '14px' } }, h(Registered))
+}
+
 function CreationCenter() {
   const state = useStoreState()
   return h('section', { className: 'avw-col avw-col--center' },
@@ -188,6 +209,7 @@ function CreationCenter() {
         h(BriefSection),
         h(MaterialsSection),
         h(CreationDomainMount),
+        h(RealworkDomainMount),
         h(PartialIntegrationNote))))
 }
 
