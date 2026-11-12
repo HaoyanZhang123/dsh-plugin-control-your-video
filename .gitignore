@@ -8,8 +8,7 @@ RENDER-LAB/
 # 内部过程文档：产品实现之外的一切规划、任务卡、回执与证据都不发布
 实施交接/
 审阅记录/
-提示词/
-规划公共状态与交接.md
+设计决策清单.md
 需求共识-v1.md
 工作台需求探讨大纲与启动提示词.md
 产品使用与完整流程蓝图.md
@@ -39,6 +38,9 @@ node_modules/
 gen-composition.mjs
 .commit-plan.sh
 .rebuild-history.sh
+
+# loop 实验的渲染中间产物：可重新生成，只留方案与脚本
+loop/out/
 
 # 系统与编辑器
 .DS_Store
