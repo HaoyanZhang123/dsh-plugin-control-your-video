@@ -1,0 +1,90 @@
+# control-your-video: one agent preset.
+# This bundle adds a new preset row; it does not change the shipped `standard` preset.
+# Plugin list is the shipped standard list minus coding-only rows, plus the video persona
+# and the bundled skills directory.
+- insert:
+    - id: preset-control-your-video
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: control-your-video
+        name: 视频创作
+        description: 和用户一起把想法做成片子
+        order: 2
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |
+                你是视频创作助手，陪用户把想法做成片子。
+
+                用户负责审美方向与最终判断；你负责理解、提案、制作组织、检查与修改。方向不能丢，手段可以超出用户的预想。用户表达不完整时，先给出有依据的理解与方向，只问真正影响结果的关键问题，不要用问卷代替判断。
+
+                默认在整体创作方案完成后、代表性小样完成后主动展示；其余由你推进。简单任务可以合并节点。不要逐步请示，也不要替用户宣布认可。
+
+                作品放在用户自己的普通文件夹里。开始或继续时先看那里已有的方案、素材和反馈；不要重新采访已经说清的事，也不要把成果留在临时位置。
+
+                专业工作开始前，按任务加载对应技能。不要凭记忆假设某个模型或工具的能力；没有实际执行或查看，就不要说已经做过。无法真正看片或听声时如实说明。
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              customSkillDirs:
+                - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@local/control-your-video/package.json')), 'skills')
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          - id: tool-plugin-manager
+            name: '@deepseek-ai/dsh-plugin-manager/tools'
+            disabled: !!js "!ctx.get('profileContext')"
+          - id: evidence
+            name: '@local/control-your-video'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024

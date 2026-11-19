@@ -1,0 +1,32 @@
+{
+  "name": "@local/control-your-video",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Video creation assistant for DeepSeek Harness: one preset that assembles 13 method skills, an evidence tool, and an optional workspace asset library.",
+  "license": "MIT",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "skills",
+    "tools",
+    "tests",
+    "locale/*.json",
+    "docs",
+    "icon.svg",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
