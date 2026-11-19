@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Control your video",
-    "description": "Turns ideas, scripts and footage into a finished video. Adds one creation preset with professional method skills for planning, prompting, sound and review.",
+    "description": "Turns ideas, scripts and footage into a finished video. Adds one \"Video creation\" preset assembling 13 method skills (intent, plan, script, visual, motion, prompting, code-rendered frames, editing, sound, review, delivery, asset library, skill authoring) plus an evidence tool.",
     "detail": "docs/DETAIL.md"
   }
 }

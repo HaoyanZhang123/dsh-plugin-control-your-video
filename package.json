@@ -1,10 +1,13 @@
 {
   "name": "dsh-plugin-control-your-video",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
-  "description": "Video creation assistant for DeepSeek Harness: one preset that assembles 13 method skills, an evidence tool, and an optional workspace asset library.",
+  "description": "A DeepSeek Harness plugin that lets the assistant actually make videos: one preset, 13 method skills, an evidence tool and an optional workspace asset library.",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.3.0"
+  },
   "exports": {
     ".": "./index.js",
     "./package.json": "./package.json",
@@ -19,8 +22,10 @@
     "tests",
     "locale/*.json",
     "docs",
+    "assets",
     "icon.svg",
     "README.md",
+    "README.zh.md",
     "CHANGELOG.md",
     "LICENSE"
   ],
