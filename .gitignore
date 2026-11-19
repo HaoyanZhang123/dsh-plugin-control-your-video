@@ -1,0 +1,4 @@
+﻿# 打包产物不入库
+*.tgz
+node_modules/
+
