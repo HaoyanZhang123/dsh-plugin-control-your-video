@@ -45,7 +45,7 @@ description: "把配色、字体、间距与层级定成一套能交付的设计
 
 不是风格问题，是不合格。按真实视口、真实字体、100% 阅读尺寸判断；**缩略图只能判构图，不能判字号**。
 
-- 字号：视频正文不小于屏高 4%（1080p 约 40px 字高），再按观看距离核一次。网页正文 16–18px 直接搬进视频等于放弃可读性——那个值来自阅读型网页（`03-oil-ui-references/visual-language.md` 的"可读性是交付门槛"），只有换成手机竖屏近距离才近似成立。
+- 字号：视频正文不小于屏高 4%（1080p 约 40px 字高），再按观看距离核一次。网页正文 16–18px 直接搬进视频等于放弃可读性——那个值来自阅读型网页（`resources/research/已确认资产/03-美术图像与提示词/03-oil-ui-references/visual-language.md` 的"可读性是交付门槛"），只有换成手机竖屏近距离才近似成立。
 - 行高：中文正文 1.7–1.8；多行中文标题 1.3–1.4（区间与失效条件见 `references/design-system.md`，按真实字形核）。汉字撑满字身框，不要照搬英文海报的 1.0–1.1，会撞行。
 - 行长：正文 45–60 个汉字（约 50–75 字符），超了就加行或加宽。
 - 中文断行三缺陷，见到算没做完：不可拆的词被拆开（"不会""38 秒""47 分钟"）、行末只剩一两个字、一个词跨两行。
@@ -93,6 +93,6 @@ description: "把配色、字体、间距与层级定成一套能交付的设计
 
 ## 来源与限制
 
-依据（本轮逐份读过，不是转述）：`packages/control-your-video/docs/编写规范.md`（§1.1、§2 第 4 行、§4、§5、§8.2、§10）；`planning/产品框架-V1.md` §6；`resources/research/已确认资产/03-美术图像与提示词/03-oil-ui-references/visual-language.md`；`resources/research/已确认资产/03-美术图像与提示词/`（`02-open-design版式模板与设计通则/craft/typography.md` 与 `05-FVPS视觉与方法-references/skills/faceless-explainer/references/composition.md`）；`resources/research/已确认资产/03-美术图像与提示词/04-anatomy/references/3d.md`。
+依据（本轮逐份读过，不是转述）：`packages/control-your-video/docs/编写规范.md`（§1.1、§2 第 4 行、§4、§5、§8.2、§10）；`planning/产品框架-V1.md` §6；`resources/research/已确认资产/03-美术图像与提示词/03-oil-ui-references/visual-language.md`；`resources/research/已确认资产/03-美术图像与提示词/`（`resources/research/已确认资产/03-美术图像与提示词/02-open-design版式模板与设计通则/craft/typography.md` 与 `resources/research/已确认资产/03-美术图像与提示词/05-FVPS视觉与方法-references/skills/faceless-explainer/references/composition.md`）；`resources/research/已确认资产/03-美术图像与提示词/04-anatomy/references/3d.md`。
 未实测：没有任何一支片子按这套顺序走完；"字号不小于屏高 4%""正文 45–60 汉字"是换算与经验值，未在成片上量过；中文断行三缺陷是静态判断，未在多种字体上各验一遍。
 缺口：三份资产分别来自网页 UI、等轴测插图与讲解片，视频成片的"观看距离／屏占比"没有对应材料，只能现场核；封面的字形核验依赖出图后逐字读，本份替代不了那一步。

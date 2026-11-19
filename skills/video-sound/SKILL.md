@@ -73,7 +73,7 @@ description: "决定声音怎么来：在真人录音、TTS、已有配音、无
 
 ## 来源与限制
 
-依据：`packages/control-your-video/docs/编写规范.md`；`resources/research/已确认资产/05-音乐与声音/07-采纳清单与反模式/`（`README.md`、`避免清单.md`、`未来音频层方向.md`——同步点语义、电平由构造保证、QC 闭环与两类工程病的来源）；`resources/research/已确认资产/05-音乐与声音/02-音画同步与卡点方法/`（`a-video-shotcraft-卡点方法/music-beat-sync.md`）与 `resources/research/已确认资产/05-音乐与声音/03-混音响度与闪避/`（`01-标准/` 四份、`02-实现/mg-styles-mgaudio/README-音频工具包.md`、`03-学习要点/ffmpeg-响度与闪避-关键要点.md`）；`resources/research/已确认资产/05-音乐与声音/`（`04-配音TTS-工程思路/`、`05-对齐算法-hypit-narrative-speech-alignment/README.md`、`06-音乐提示词方法/`、`01-mg-styles-15-声音/` 的 `README.md` 与 `15支声音-说明.md`）；`resources/research/已确认资产/02-创作剧本与分镜/05-OpenMontage-剧本导演卡-11管线/skills/meta/voice-performance-director.md`。以上为本轮实际读过，不是转述。
+依据：`packages/control-your-video/docs/编写规范.md`；`resources/research/已确认资产/05-音乐与声音/07-采纳清单与反模式/`（`README.md`、`避免清单.md`、`未来音频层方向.md`——同步点语义、电平由构造保证、QC 闭环与两类工程病的来源）；`resources/research/已确认资产/05-音乐与声音/02-音画同步与卡点方法/`（`a-video-shotcraft-卡点方法/music-beat-sync.md`）与 `resources/research/已确认资产/05-音乐与声音/03-混音响度与闪避/`（`01-标准/` 四份、`resources/research/已确认资产/05-音乐与声音/03-混音响度与闪避/02-实现/mg-styles-mgaudio/README-音频工具包.md`、`resources/research/已确认资产/05-音乐与声音/03-混音响度与闪避/03-学习要点/ffmpeg-响度与闪避-关键要点.md`）；`resources/research/已确认资产/05-音乐与声音/`（`04-配音TTS-工程思路/`、`resources/research/已确认资产/05-音乐与声音/05-对齐算法-hypit-narrative-speech-alignment/README.md`、`06-音乐提示词方法/`、`01-mg-styles-15-声音/` 的 `README.md` 与 `15支声音-说明.md`）；`resources/research/已确认资产/02-创作剧本与分镜/05-OpenMontage-剧本导演卡-11管线/skills/meta/voice-performance-director.md`。以上为本轮实际读过，不是转述。
 
 未实测：本份没有任何一条跑过——没合成过语音、没渲染过片、没跑过节拍分析或响度测量；mg-styles 15 支**一支都没听过**，其响度是作者 ffmpeg `ebur128` 读数，不是听感结论。
 

@@ -105,7 +105,7 @@ description: "把口播稿、解说词、旁白、标题与开场的字写出来
 - ② `resources/research/已确认资产/02-创作剧本与分镜/12-garden-网页视频大纲与文风/references/` 的 `SCRIPT-STYLE.md`、`CHAPTER-CRAFT.md`、`OUTLINE-FORMAT.md`——只取方法与条件，其中的 60%、20 字、B 站默认已逐处标明来源与失效条件
 - ③ `resources/research/已确认资产/02-创作剧本与分镜/11-FullVideoProductionSkill-剧本与分镜/skills/` 的 `faceless-explainer/references/story-design.md`（按题材选结构）与 `hyperframes-creative/references/narration.md`（数字要写成能念出来的样子）
 - ④ `resources/research/已确认资产/02-创作剧本与分镜/01-lanshu-数字人讲解与12风格解说/explainer/stories/kv-cache/script.md`——只作"好口播长什么样"的参照，未抄用
-- ⑤ `resources/research/已确认资产/02-创作剧本与分镜/06-hypit-剧本语言与语义时间/skills/hypit/references/creation/script-and-time.md`（C 级，只提炼"文字与时间"的关系）与 `05-OpenMontage-剧本导演卡-11管线/skills/meta/voice-performance-director.md`（AGPL，只借"停顿当结构、给表演留位置"这一点，方法转述，未搬文本）
+- ⑤ `resources/research/已确认资产/02-创作剧本与分镜/06-hypit-剧本语言与语义时间/skills/hypit/references/creation/script-and-time.md`（C 级，只提炼"文字与时间"的关系）与 `resources/research/已确认资产/02-创作剧本与分镜/05-OpenMontage-剧本导演卡-11管线/skills/meta/voice-performance-director.md`（AGPL，只借"停顿当结构、给表演留位置"这一点，方法转述，未搬文本）
 
 未实测：没有真的出声念过任何一稿，也没有把稿子送进 TTS 听过结果，所以"念着顺"这条全部是写作时的判断，不是听感证据。中文 4 字/秒是估读值，没有按实际语速测过；"2 分钟约 450—500 字"由它推出，误差未测。原资产里的"信息保留度 60%""每句 ≤20 字""B 站默认风格"都来自 garden 一份单作者材料，写进参考时已标明是文章转口播的起点而非硬门槛。
 
