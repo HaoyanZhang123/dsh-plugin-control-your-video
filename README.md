@@ -11,7 +11,7 @@
   <a href="https://ffmpeg.org"><img src="https://img.shields.io/badge/FFmpeg-optional-007808?logo=ffmpeg&logoColor=white" alt="FFmpeg optional, needed only by the evidence tool"></a>
   <a href="https://github.com/deepseek-ai"><img src="https://img.shields.io/badge/DeepSeek%20Harness-plugin-3d8bff" alt="DeepSeek Harness plugin"></a>
   <a href="https://opensource.org/license/mit"><img src="https://img.shields.io/badge/license-MIT-3d8bff" alt="MIT License"></a>
-  <a href="https://github.com/HaoyanZhang123/dsh-plugin-control-your-video/releases"><img src="https://img.shields.io/badge/release-v0.2.1-7fd4ff" alt="Release v0.2.1"></a>
+  <a href="https://github.com/HaoyanZhang123/dsh-plugin-control-your-video/releases"><img src="https://img.shields.io/badge/release-v0.3.0-7fd4ff" alt="Release v0.2.1"></a>
 </p>
 
 ## Overview
@@ -24,7 +24,8 @@ Your footage, your project files and your accumulated experience stay in your ow
 
 **Planning and writing**
 
-- Turn a vague feeling ("make it hit harder") into a concrete plan: format, structure, duration budget, shot list.
+- Turn a vague feeling ("make it hit harder") into a complete plan: a prose overview, an at-a-glance table, stages, every shot, visual system, sound, rhythm, assets — and a `plan-check` gate that refuses to let production start until it is all there.
+- Every shot declares **where its motion comes from** — subject movement, camera move, cut, transition, element animation, full-frame effect, or still — so "the background is shimmering" cannot pass as "this shot moves".
 - Strong boundaries between what the assistant decides and what only you can decide — aesthetic direction is yours.
 - Rewrite an article into spoken narration; strip AI-flavoured phrasing.
 
@@ -44,8 +45,8 @@ Your footage, your project files and your accumulated experience stay in your ow
 **Everything else**
 
 - **1 preset** that wires up file access, shell, long-running jobs and on-demand skill loading.
-- **13 skills**, each under 150 lines, with **48 on-demand references**. The body only says *when* to read which reference, so nothing bloats the context until it is needed.
-- **1 `evidence` tool** wrapping `ffmpeg`/`ffprobe` for frame extraction and measurement. Optional — you can make a video without it, you just cannot prove what you looked at.
+- **13 skills**, each under 150 lines, with **49 on-demand references**. The body only says *when* to read which reference, so nothing bloats the context until it is needed.
+- **1 `evidence` tool** wrapping `ffmpeg`/`ffprobe` for frame extraction and measurement, plus a `plan-check` action that gates production on a complete plan. Optional — you can make a video without it, you just cannot prove what you looked at.
 
 ![Opening frame: the first number](assets/01-cold-open.jpg)
 
@@ -76,7 +77,7 @@ The first round normally is not a finished video. You get three things:
 2. **A plan** — format, structure, duration budget, and what each shot needs.
 3. **A short sample** — when the project is worth testing on a small piece first.
 
-It stops for you twice by default: after the overall plan, and after the sample. Everything between — sourcing, rendering, checking — it runs on its own, and you can interrupt at any point.
+It stops for you three times by default: after confirming the intent, after the complete plan, and after the sample. Everything between — sourcing, rendering, checking — it runs on its own, and you can interrupt at any point. When it stops, it says what was decided, what is still open, and what you should look at or answer.
 
 ![Open source versus closed source](assets/02-open-vs-closed.jpg)
 
@@ -108,7 +109,7 @@ Project files — plans, footage, renders, evidence — stay out of the library,
 
 ```
 skills/     13 skill directories, each with SKILL.md and its own references/
-tools/      evidence.js — frame extraction and measurement, runnable by hand
+tools/      evidence.js (frame extraction, measurement) + plan-check.js (plan gate), both runnable by hand
 docs/       编写规范.md (the five shared contracts), DETAIL.md (plugin page copy)
 locale/     plugin-manager strings, Chinese and English
 assets/     cover and real stills used by the READMEs

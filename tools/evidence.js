@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * evidence.js — control-your-video 的证据索引工具
+ * evidence.js — control-your-video 的证据索引与方案检查工具
  *
- * 四个动作合成一个脚本：extract / measure / recall / gc。
- * 接口定义见 docs/编写规范.md §1.5；用法见 tools/evidence.md。
+ * 五个动作合成一个脚本：extract / measure / recall / gc / plan-check。
+ * 接口定义见 docs/编写规范.md §1.5 与 §1.6；用法见 tools/evidence.md。
  *
  * 设计约束（都来自规范，不是可选项）：
  *   - 索引是一个 JSON 数组，字段名固定，不改名。
@@ -25,6 +25,11 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { checkPlan } from './plan-check.js';
+
+/** plan-check 的严重度标签，与 tools/plan-check.js 里的一致。 */
+const SEVERITY_RED = 'red';
+const SEVERITY_YELLOW = 'yellow';
 
 // ── 常量 ────────────────────────────────────────────────────────────────────
 
@@ -554,6 +559,58 @@ async function actionGc(opts) {
   log('这些文件没被删掉；确认不再需要后再手工删那个目录。');
 }
 
+// ── plan-check：开工前的方案检查 ─────────────────────────────────────────────
+
+/**
+ * 检查一份 plan.md 是不是完整到可以开工。
+ *
+ * 与 evidence 的四个取证动作不同：它不看画面、不出证据条目，
+ * 只把 docs/编写规范.md §1.6 的硬规则变成能跑的判断。
+ * 判定逻辑全在 tools/plan-check.js，本函数只负责读文件与印结论。
+ */
+async function actionPlanCheck(opts) {
+  let target = opts.dir || opts.plan;
+  if (!target) die('缺少 --dir（作品夹）或 --plan（plan.md 路径）。');
+
+  if (!fs.existsSync(target)) die(`路径不存在：${target}`);
+  if (fs.statSync(target).isDirectory()) {
+    target = path.join(target, 'plan.md');
+    if (!fs.existsSync(target)) die(`目录里没有 plan.md。`);
+  }
+
+  const text = fs.readFileSync(target, 'utf8');
+  const result = checkPlan(text);
+
+  log(`plan-check: ${target}`);
+  log('');
+  if (result.state) {
+    log(`  状态：${result.state.状态} · ${result.state.修订} · ${result.state.日期}`);
+  } else {
+    log('  状态：（缺）');
+  }
+  log('');
+  for (const [k, v] of Object.entries(result.stats)) log(`  ${k}: ${v}`);
+  log('');
+
+  const reds = result.findings.filter((f) => f.level === SEVERITY_RED);
+  const yellows = result.findings.filter((f) => f.level === SEVERITY_YELLOW);
+  if (reds.length) {
+    log(`  ✗ 红 ${reds.length} 条（不许进制作）`);
+    for (const f of reds) log(`    [${f.code}] ${f.message}`);
+    log('');
+  }
+  if (yellows.length) {
+    log(`  △ 黄 ${yellows.length} 条（可以进，但要说清）`);
+    for (const f of yellows) log(`    [${f.code}] ${f.message}`);
+    log('');
+  }
+  if (!reds.length && !yellows.length) log('  ✓ 全项通过。');
+  log('');
+  log(`  结论：${result.pass ? '可以进制作' : '不许进制作'}`);
+
+  if (!result.pass) process.exitCode = 1;
+}
+
 // ── 参数解析 ────────────────────────────────────────────────────────────────
 
 const BOOL_FLAGS = new Set(['yes', 'force']);
@@ -583,7 +640,7 @@ function parseArgs(argv) {
 function usage() {
   process.stdout.write(
     [
-      'evidence.js — 证据索引工具（extract / measure / recall / gc 四合一）',
+      'evidence.js — 证据索引与方案检查工具（extract / measure / recall / gc / plan-check 五合一）',
       '',
       '用法：',
       '  node tools/evidence.js extract --dir <work/evidence> --source <成片> \\',
@@ -597,6 +654,10 @@ function usage() {
       '      [--purpose look] [--status current|superseded|all] [--from 10] [--to 14] [--id <id>]',
       '',
       '  node tools/evidence.js gc --dir <work/evidence> [--yes]',
+      '',
+      '  node tools/evidence.js plan-check --dir <作品夹>',
+      '',
+      'plan-check 只读 plan.md，不碰证据索引；有红时退出码 1，可当开工门禁。',
       '',
       `用途枚举：${PURPOSES.join(' / ')}`,
       '状态枚举：current / superseded',
@@ -621,18 +682,20 @@ async function main() {
     measure: actionMeasure,
     recall: actionRecall,
     gc: actionGc,
+    'plan-check': actionPlanCheck,
   };
 
   const fn = table[action];
   if (!fn) {
     usage();
-    die(`未知动作 ${action}。只有 extract / measure / recall / gc 四个。`);
+    die(`未知动作 ${action}。只有 extract / measure / recall / gc / plan-check 五个。`);
   }
 
   await fn(opts);
 
   // 显式退出：spawnSync 的子进程句柄不该拖着主进程。
-  process.exit(0);
+  // 用 exitCode 而不是硬写 0：plan-check 有红时会置 1，不能被这里抹掉。
+  process.exit(process.exitCode ?? 0);
 }
 
 main().catch((err) => die(`未处理的错误：${err?.stack || err}`));

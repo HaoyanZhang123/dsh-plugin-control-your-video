@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-control-your-video",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "A DeepSeek Harness plugin that lets the assistant actually make videos: one preset, 13 method skills, an evidence tool and an optional workspace asset library.",

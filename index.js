@@ -29,6 +29,7 @@ const FLAGS = {
   measure: ['dir', 'source', 'revision', 'shot', 'kind', 't', 'purpose'],
   recall: ['dir', 'shot', 'revision', 'purpose', 'status', 'from', 'to', 'id'],
   gc: ['dir', 'yes'],
+  'plan-check': ['dir'],
 };
 
 /** 无值开关。 */
@@ -41,7 +42,7 @@ const TIMEOUT_MS = 120000;
 
 function buildArgv(action, args) {
   const allowed = FLAGS[action];
-  if (!allowed) throw new Error(`未知动作 ${action}；只有 extract / measure / recall / gc。`);
+  if (!allowed) throw new Error(`未知动作 ${action}；只有 extract / measure / recall / gc / plan-check。`);
 
   const argv = [action];
   for (const key of allowed) {
@@ -54,7 +55,7 @@ function buildArgv(action, args) {
     argv.push(`--${key}`, String(value));
   }
 
-  if (!args.dir) throw new Error('缺少 dir：要给证据目录（作品内 work/evidence 的绝对路径）。');
+  if (!args.dir) throw new Error('缺少 dir：要给作品文件夹（plan-check）或证据目录（其余动作）的绝对路径。');
   if ((action === 'extract' || action === 'measure') && !args.source) {
     throw new Error(`action=${action} 需要 source：要给被取证的成片路径。`);
   }
@@ -100,13 +101,14 @@ const PARAMETERS = {
   properties: {
     action: {
       type: 'string',
-      enum: ['extract', 'measure', 'recall', 'gc'],
+      enum: ['extract', 'measure', 'recall', 'gc', 'plan-check'],
       description:
-        'extract 抽帧并登记；measure 做时长/黑帧/响度等确定性测量；recall 按条件找回旧证据；gc 清理 superseded 条目。',
+        'extract 抽帧并登记；measure 做时长/黑帧/响度等确定性测量；recall 按条件找回旧证据；gc 清理 superseded 条目；plan-check 开工前检查 plan.md 是否完整（读作品文件夹，不看画面）。',
     },
     dir: {
       type: 'string',
-      description: '证据目录，通常是作品文件夹里的 work/evidence。给绝对路径。',
+      description:
+        'plan-check 给作品文件夹（含 plan.md）；其余动作给证据目录，通常是作品文件夹里的 work/evidence。给绝对路径。',
     },
     workspace: {
       type: 'string',

@@ -8,6 +8,76 @@ Each version has two independent sections: a complete Chinese version first, the
 
 ---
 
+## 0.3.0 · 2026-11-19
+
+### 中文
+
+这一版改的是**流程本身**。起因是一次真实使用复盘：两支片都没按预期停下来讨论方案，而是两分半从零做到整片脚本，方案最后才补。
+
+**变更概览**：新增 5 项 · 优化 4 项 · 修复 3 项
+
+**新增**
+
+- **三个必经确认点**：意图确认后、完整方案后、小样后。写进 Preset 的 persona——停下来＝这一轮结束、交出回合、等用户下一句；用户没回话就不做下一步。
+- **完整方案定义**（`docs/编写规范.md` §1.6）：`plan.md` 必须十节齐全——状态行、总述（散文，≤1000 字）、总览、阶段、视觉系统、声音、节奏与转场、标题与封面、制作路径、素材需求表、镜头表。
+- **阶段层**：片 → 阶段 → 镜。每阶段八列：阶段、起止、时长、主题、风格、视觉变化、镜数、做什么。镜是执行单位，阶段是叙事单位。
+- **镜头第 11 字段「动源」**：每镜必须声明这一镜的动从哪来，七类选一——主体位移、运镜、切点、转场、元素动效、整段特效、静止。
+- **`plan-check` 门禁**：`evidence` 工具新增动作（也可独立跑 `tools/plan-check-cli.js`）。查 12 项，红灯非零退出，**有红不许进制作**。
+
+**优化**
+
+- `video-plan` 重写：删掉"方案不必四节全出""够用就停"，改成十节全出；加"定动源前必须先加载 video-motion"。
+- `video-motion` 扩写：新增 §1.5「动源」，七类判据、碎动与整段特效的分界、实测动源与声明不一致怎么判；新增第六种 PPT 病因「动源与声明不符」。
+- `video-motion` 的 description 改写：触发面从"用户抱怨像 PPT 时"扩到"要给镜头定动源、写动源列时"，修掉它此前在两支真实片里**从未被触发**的问题。
+- `video-review` 观察清单新增「五之二」：报"这一段在动"之前必须同时给运动面积、最大连通块、连通块数量三个量，并与方案声明的动源对账。
+
+**修复**
+
+- **禁止清单 §7-3 自相矛盾**：原来把"请用户确认后再继续"列为不合格，使任何暂停写法都会被判死；改为「每一步都拍板」禁止，但三个确认点是必经的。
+- **旧口径把碎动判成"在动"**：原「任一块变化即算这一帧有变化」的口径下，一个光点飘过就让整帧算通过。实测《万年归唐》小样按旧口径 `longest_static = 0.0s` 全项通过，而同一支片 55.7% 的帧是"高面积碎动"——变化散成 8 团以上、每团不到画面 2%，主体纹丝不动。
+- `video-edit` 补方案阶段的分工表：阶段的「风格」与「视觉变化」由它定，具体帧号归制作阶段。
+
+**重要说明**
+
+- `plan-check` 会拦下按旧规范写的所有 `plan.md`。已有的在制作品需要按 §1.6 补齐十节、补动源列、补素材需求表，否则过不了门禁。
+- 动源契约里"爽片主体位移或运镜 ≥30%"是方向性数值，**未在真实成片上校准**。
+- `plan-check` 只认中文节标题；它判"写没写、齐不齐"，不判"方案好不好"。
+
+### English
+
+This release changes **the workflow itself**. It comes from a post-mortem of real use: two films skipped the planning conversation entirely — going from zero to a finished script in two and a half minutes, with the plan written last.
+
+**Summary**: Added 5 · Improved 4 · Fixed 3
+
+**Added**
+
+- **Three mandatory checkpoints**: after intent confirmation, after the complete plan, and after the sample. Written into the preset persona — stopping means the turn ends, the floor is handed over, and nothing further happens until the user replies.
+- **A definition of "complete plan"** (`docs/编写规范.md` §1.6): `plan.md` must contain all ten sections — state line, prose overview (≤1000 characters), at-a-glance table, stages, visual system, sound, rhythm and transitions, title and cover, production path, asset requirements, and the shot table.
+- **A stage layer**: film → stage → shot. Eight columns per stage: stage, time range, duration, theme, style, visual change, shot count, purpose. Shots are execution units; stages are narrative units.
+- **An eleventh shot field, "motion source"**: every shot must declare where its motion comes from — subject movement, camera move, cut, transition, element animation, full-frame effect, or still.
+- **A `plan-check` gate**: a new action on the `evidence` tool (also runnable standalone via `tools/plan-check-cli.js`). Twelve checks; any red exits non-zero, and red means production cannot start.
+
+**Improved**
+
+- `video-plan` rewritten: removed "the plan need not have all four sections" and "stop when it is good enough"; the plan is now all ten sections. Added "load `video-motion` before assigning motion sources".
+- `video-motion` expanded with §1.5 on motion sources: criteria for the seven types, the line between scattered micro-motion and full-frame effects, and how to judge when measured motion contradicts the declaration. A sixth "looks like a slide deck" cause was added: motion source does not match what was declared.
+- `video-motion` description rewritten so it triggers when motion sources are being assigned — it had **never been triggered** across both real films.
+- `video-review` observation checklist gained a section requiring three motion numbers (area, largest connected component, component count) alongside any claim that a segment "is moving", cross-checked against the declared motion source.
+
+**Fixed**
+
+- **Self-contradicting prohibition (§7-3)**: "ask the user to confirm before continuing" was listed as unacceptable, which killed any pause instruction. Now only per-step approval is prohibited; the three checkpoints are mandatory.
+- **The old metric counted scattered micro-motion as motion**: "any block changed counts as this frame changing" let a single drifting light pass. Measured on the 《万年归唐》 sample, the old gate reported `longest_static = 0.0s` and passed everything, while 55.7% of the same film's frames were high-area scattered motion — changes split across 8+ components, none larger than 2% of the frame, with the subject motionless.
+- `video-edit` gained an explicit division-of-labour table: per-stage style and visual change belong to it; frame-level timing belongs to production.
+
+**Important Notes**
+
+- `plan-check` will reject every `plan.md` written under the old spec. Works in progress must be brought up to §1.6 — ten sections, motion-source column, asset requirements table — or they will not pass the gate.
+- The "subject movement or camera move ≥30%" figure in the genre contract is directional and **has not been calibrated against real finished films**.
+- `plan-check` only recognises Chinese section headings, and judges completeness, not quality.
+
+---
+
 ## 0.2.1 · 2026-11-19
 
 ### 中文

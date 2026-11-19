@@ -11,7 +11,7 @@
   <a href="https://ffmpeg.org"><img src="https://img.shields.io/badge/FFmpeg-optional-007808?logo=ffmpeg&logoColor=white" alt="FFmpeg 可选，仅取证工具需要"></a>
   <a href="https://github.com/deepseek-ai"><img src="https://img.shields.io/badge/DeepSeek%20Harness-plugin-3d8bff" alt="DeepSeek Harness 插件"></a>
   <a href="https://opensource.org/license/mit"><img src="https://img.shields.io/badge/license-MIT-3d8bff" alt="MIT 许可"></a>
-  <a href="https://github.com/HaoyanZhang123/dsh-plugin-control-your-video/releases"><img src="https://img.shields.io/badge/release-v0.2.1-7fd4ff" alt="v0.2.1 版本"></a>
+  <a href="https://github.com/HaoyanZhang123/dsh-plugin-control-your-video/releases"><img src="https://img.shields.io/badge/release-v0.3.0-7fd4ff" alt="v0.2.1 版本"></a>
 </p>
 
 ## 简介
@@ -24,7 +24,8 @@
 
 **规划与本子**
 
-- 把一句说不清的感觉（"再燃一点"）变成具体方案：片型、结构、时长预算、镜头表。
+- 把一句说不清的感觉（"再燃一点"）变成一份完整方案：总述、总览、阶段、每一镜、视觉系统、声音、节奏、素材——外加一道 `plan-check` 门禁，方案不齐不许开工。
+- 每一镜都要声明**动源**——主体位移、运镜、切点、转场、元素动效、整段特效还是静止——所以"背景在闪"不能冒充"这一镜在动"。
 - 助手替你决定的，和只有你能决定的，边界清楚——审美方向归你。
 - 把一篇文章改成口播；清掉 AI 味。
 
@@ -44,8 +45,8 @@
 **其余**
 
 - **1 个 Preset**：挂好文件读写、命令执行、长任务与按需加载技能。
-- **13 个 Skill**，每份正文不超过 150 行，配 **48 份按需参考**。正文只写*什么时候*去读哪一份，不读到就不占上下文。
-- **1 个 `evidence` 工具**：封装 `ffmpeg`／`ffprobe` 做抽帧与测量。选装——没有它照样能做片，只是没法证明你看过什么。
+- **13 个 Skill**，每份正文不超过 150 行，配 **49 份按需参考**。正文只写*什么时候*去读哪一份，不读到就不占上下文。
+- **1 个 `evidence` 工具**：封装 `ffmpeg`／`ffprobe` 做抽帧与测量，另有一个 `plan-check` 动作在开工前卡方案完整性。选装——没有它照样能做片，只是没法证明你看过什么、也少一道门禁。
 
 ![冷开场：第一个数字](assets/01-cold-open.jpg)
 
@@ -76,7 +77,7 @@
 2. **一个方案**——片型、结构、时长预算，以及每一镜要什么。
 3. **一段小样**——当这支片值得先做一小段看效果时。
 
-它默认只在两处停下来：整体方案之后、小样之后。中间找素材、渲染、检查都由它自己推进，你随时可以插话。
+它默认在三处停下来：意图确认后、完整方案后、小样后。中间找素材、渲染、检查都由它自己推进，你随时可以插话。每次停下会说清：这次定了什么、哪里还没定、你该看或该答什么。
 
 ![开源与闭源的对立](assets/02-open-vs-closed.jpg)
 
@@ -108,7 +109,7 @@
 
 ```
 skills/     13 个技能目录，每个含 SKILL.md 与其专属 references/
-tools/      evidence.js —— 抽帧与测量，也能人手直跑
+tools/      evidence.js（抽帧与测量）＋ plan-check.js（方案门禁），都能人手直跑
 docs/       编写规范.md（五个共享契约）、DETAIL.md（插件详情页文案）
 locale/     插件管理器的中英文案
 assets/     README 用的封面与真实成片静帧

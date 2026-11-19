@@ -52,3 +52,4 @@
 | `video-release.md` | 四类"能不能"分开判、三法域不能互搬、生物特征 |
 | `video-library.md` | 该不该入库、偏好与方法的分界、删除 |
 | `video-skill-authoring.md` | 该不该做成 Skill、写在哪一层、怎么验证 |
+| `plan-check.md` | `plan-check` 门禁的用法、必测红项与已知局限（附两个固定样本） |
