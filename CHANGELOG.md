@@ -8,6 +8,125 @@ Each version has two independent sections: a complete Chinese version first, the
 
 ---
 
+## 0.4.0 · 2026-11-21
+
+### 中文
+
+V1.3 正式版。0.3.0 把流程写成规则，这一版把规则做成可执行的制作链：创意、完整方案、小样、成片与修订各自落到文件与宿主记录上，并随包提供一条本机 FFmpeg 制作路线。范围对照上一个公开发布版 `0.3.0`。
+
+**变更概览**：新增 9 项 · 优化 3 项 · 修复 3 项
+
+**新增**
+
+- **三个受控确认点落到宿主记录**：创意方向、完整方案版本、代表性小样。答案由 DSH 的用户问答服务取得并存进宿主的 JSON 存储，方案认可绑定 `plan.md` 内容摘要、制作清单与小样镜头选择，小样认可绑定样片的 SHA-256。改动文件或换一版方案，旧认可自动失效。
+- **`cyv` 工具**：项目新建与打开、素材复制、创意与方案、检查、小样与全片、修订、局部字幕、本机能力探测、插件内参考读取、经验库收录与检索都走这一个入口。
+- **本机 FFmpeg 受控制作链**：程序画面（四种生成图案）、项目内照片、既有视频三种画面来源，可叠字幕，音频支持无声、程序音调、素材音轨与沿用镜头原声；能出代表性小样、完整成片和完整修订版，渲染前校验清单并加项目锁。
+- **项目文件夹与素材副本**：项目是工作区里的普通文件夹；导入的素材复制进 `assets/` 并留哈希，原件不动。同名文件不被覆盖，后到的一份自动改名并保留两份；不安全路径与符号链接被拒，导入失败整批回滚。- **可选的经验库**：默认不建、不预铺占位文件；按使用场景归类，读库与收录都要用户明确同意，收录发生在交付之后。
+- **`plan-check` 契约检查**：不再要求固定十节与旧 11 列；认镜头表或逐镜小节两种写法，查缺镜、单镜与合计时长、可核实素材（已有／待产出／真缺三态）。
+- **可选生成模型接口**：宿主插件可提供模型服务；单次素材任务分别确认选型与费用上限，一次授权只对一次调用有效。
+- **公开资料核对预设**：把独立查证公开资料的活儿交给一个单独的预设，它只做网页检索与读取、文件查看、待办与提问，不承担创意和制作。
+- **测试**：`npm test` 覆盖方案检查、项目创建与素材导入、审批绑定、本机制作与经验库；`tests/host-smoke.cjs` 用已安装的 DSH 与真实 FFmpeg 跑通小样、全片、与旧版并列的完整修订、导入片段的独立字幕与经验收录检索。
+
+**优化**
+
+- **视频预设改为“标准工具清单 + 插件工具”**：与标准预设一样的 Shell、文件读写、后台任务、计划模式、子代理与工作流全部保留，再叠加 `cyv` 与 `evidence`。此前的工具收窄只存在于 0.4.0-rc.1 候选包，正式版取消。
+- **文档改为正式版口径**：README 中英双语、`docs/DETAIL.md`、`docs/工程验收.md`、`docs/验证指南.md` 与 locale 一起重写，安装、审批边界与验证范围的说法对齐实际行为。
+- **修订交付**：每次修订另存完整新版并保留旧版，认可状态与文件版本继续绑定，可按文件比较新旧。
+
+**修复**
+
+- **rc.1 的“视频预设限制通用执行入口和子代理”说法**：那是 rc.1 候选包当时的临时收窄，不是正式版行为。正式版保留标准工具的完整能力，`tools/preset-policy.js` 为空实现，不设插件级的全局门禁。
+- **0.3.0 的 `plan-check` 会拦下所有旧 `plan.md`**：现按契约检查，旧 11 列格式不再被强制，缺的是覆盖、时长与素材可核实性。
+- **过时的状态描述**：README、DETAIL 与 locale 里“本地验收候选、真实用户验收待进行”的写法已按正式版与用户的实际使用结果更新。
+
+**重要说明**
+
+- **审批是流程约束，不是不可绕过的运行时门禁**。标准 Shell 与文件工具就在预设里，理论上可以不经 `cyv` 直接渲染；这套确认保证的是“用户批准过的内容版本才继续”，不是“技术上无法绕过”。文档避免使用“不可绕过”的表述。
+- **`plan-check` 判结构、时长与可核实素材，不判创意好坏**。`pass` 仍需要人审；机器检查不能替代你的眼睛和耳朵。
+- **生成模型接口未接真实服务**。仓库里的测试不连接任何真实提供方，模型选型与费用也仍需你逐次确认。
+- **验证范围**：本机为 Windows 11、DSH Desktop `0.2.2-rc.5`、Node 24.22.1、FFmpeg/FFprobe 9.0.1。用户在 0.4.0-rc.3 上完成了真实最小正片，核心 Skill 达到可用目标——这是用户反馈，事件细节（片名、技术路线、时长）未在本仓库记录。没有 A/B 对照，也没有多题材、多平台或多人使用的验证。
+- **升级**：`cordis.patch.yml` 有改动，装完必须按宿主提示重启并**新开会话**才生效。从 0.3.0 的旧链接安装（`npm link`、本地目录链接或指向旧路径的 `file:` 依赖）升级时，先把依赖换成 0.4.0 的安装包或本包目录再重启，否则会话里仍是旧版。旧版本目录、项目文件夹与经验库都不属于需要清理的文件，保留即可回退。
+
+### English
+
+Release V1.3. 0.3.0 wrote the workflow down as rules; this version turns those rules into a production chain — creative direction, complete plan, sample, full video and revisions each bind to a file and a Host-recorded decision — and ships one local FFmpeg route for making the picture. Compared against the last public release, `0.3.0`.
+
+**Summary**: Added 9 · Improved 3 · Fixed 3
+
+**Added**
+
+- **Three Host-recorded checkpoints**: creative direction, complete plan version, and representative sample. Answers come from the DSH user-question service and are stored in the Host's JSON storage; a plan approval binds to the `plan.md` digest, production recipe and sample shot choice, and a sample approval binds to the sample file's SHA-256. Change the file or approve another plan version and the old approval stops applying.
+- **The `cyv` tool**: project creation and opening, media import, creative decision and plan, checks, sample and full render, revisions, standalone caption work, local capability probing, in-plugin reference reading, and library save/search all enter through this one tool.
+- **A controlled local FFmpeg route**: procedural graphics (four generated patterns), project photos, or existing video for the picture, with optional captions; audio can be silent, a generated tone, a supplied track, or each shot's own sound. It renders representative samples, complete videos and complete revisions, validating the recipe first and holding a per-project lock.
+- **Project folders with copied media.** The plugin copies imported media into `assets/` and records file hashes. If names clash, it renames the later copy and keeps both files. It rejects unsafe paths and symbolic links, and rolls back a failed import.
+- **An optional experience library**: nothing is created by default and no placeholder files are laid down; entries are organised by use case, and both searching and saving need your explicit consent, with saving happening only after delivery.
+- **A contract-based `plan-check`**: the fixed ten sections and old eleven columns are no longer required. It accepts a shot table or per-shot subsections, and checks missing shots, per-shot and total duration, and whether each asset is verifiable (present, planned, or genuinely missing).
+- **An optional generation-model interface**: a Host plugin can supply model providers. A standalone media task gets separate approvals for model choice and a spending cap, and one approval applies to exactly one call.
+- **A preset for fact-checking public material**: independent verification of public sources goes to a separate preset that does web search and page reading, file viewing, todos and questions, and does not take on creative or production work.
+- **Tests**: `npm test` covers plan validation, project creation and media import, approval binding, local production and the experience library; `tests/host-smoke.cjs` runs a sample, a full video, a complete revision beside the old one, a standalone caption job on imported footage, and a library save and search against an installed DSH and a real FFmpeg.
+
+**Improved**
+
+- **The video preset is now "the standard tool list plus plugin tools"**: the same shell, file access, background jobs, plan mode, subagents and workflows as the standard preset, with `cyv` and `evidence` added on top. The earlier narrowing existed only in the 0.4.0-rc.1 candidate package and is gone from the release.
+- **Documentation rewritten for a release**: the bilingual README, `docs/DETAIL.md`, `docs/工程验收.md`, `docs/验证指南.md` and the locale entries were revised together so installation, approval boundaries and verification scope match actual behaviour.
+- **Revision delivery**: every revision is saved as a complete new version while the old one is kept, approvals stay bound to file versions, and the two can be compared file by file.
+
+**Fixed**
+
+- **The rc.1 claim that "the video preset limits general-purpose execution and delegation"**: that was a temporary narrowing in the rc.1 candidate package, not release behaviour. The release keeps the standard tools' full capability, and `tools/preset-policy.js` is a no-op that sets no plugin-wide gate.
+- **0.3.0's `plan-check` rejected every old `plan.md`**: it now checks the contract instead. The old eleven-column format is no longer mandatory; what matters is shot coverage, duration and verifiable assets.
+- **Stale status wording**: "local acceptance candidate" and "user acceptance still pending" in the README, DETAIL and locale now reflect the release and the user's actual result.
+
+**Important Notes**
+
+- **Approval is a workflow constraint, not an unbypassable runtime gate.** The standard shell and file tools are mounted in the preset, so the local route can in principle be driven without going through `cyv`. What the checkpoints guarantee is that only a content version you approved moves on — not that bypassing is technically impossible, and the documentation avoids claiming otherwise.
+- **`plan-check` judges structure, duration and verifiable assets, not creative quality.** A `pass` still needs human review; a machine check cannot replace your eyes and ears.
+- **The generation-model interface has not been connected to a real service.** The tests in this repository contact no real provider, and model choice and cost still need your per-call approval.
+- **Verification scope**: this machine is Windows 11 with DSH Desktop `0.2.2-rc.5`, Node 24.22.1 and FFmpeg/FFprobe 9.0.1. The user completed a real minimal film on 0.4.0-rc.3 and reported that the core Skills met the goal — a user report; event details (title, technique, duration) are not recorded in this repository. There is no A/B comparison, and no multi-genre, cross-platform or multi-person verification.
+- **Upgrading**: `cordis.patch.yml` changed, so a restart per the Host prompt and a **new session** are required. When upgrading from a 0.3.0 link (`npm link`, a linked local directory, or a `file:` dependency pointing at the old path), repoint the dependency at the 0.4.0 package or this package directory before restarting, or the session keeps running the old build. Your previous version directories, project folders and experience library are not files to clean up — keeping them is what lets you roll back.
+
+## 0.4.0-rc.3 · 本地候选（未公开发布）
+
+### 中文
+
+- 取代 rc.1 的工具收窄：预设改为标准工具清单加 `cyv` 与 `evidence`，Shell、文件读写、后台任务、计划模式、子代理与工作流全部保留。`tools/preset-policy.js` 改为空实现。
+- `plan-check` 从固定模板改为契约检查，旧格式 `plan.md` 不再被无条件拦截。
+- 这是正式 0.4.0 的来源候选包，行为与 0.4.0 一致；当时未公开发布。
+
+### English
+
+- Replaces rc.1's tool narrowing: the preset is now the standard tool list plus `cyv` and `evidence`, keeping the shell, file access, background jobs, plan mode, subagents and workflows. `tools/preset-policy.js` became a no-op.
+- `plan-check` moved from a fixed template to a contract check, so plans written in the old format are no longer rejected outright.
+- This is the candidate package 0.4.0 was built from and behaves the same; it was never published.
+
+## 0.4.0-rc.2 · 本地候选（未公开发布）
+
+### 中文
+
+- 取消 rc.1 的工具收窄，预设改回标准工具清单：Shell、文件读写、后台任务、计划模式、子代理与工作流连同 `cyv`、`evidence` 一起挂载。
+- 未公开发布。rc.2 已具备正式版的基本行为，后续 rc.3 在此基础上修整。
+
+### English
+
+- Drops rc.1's tool narrowing and restores the standard tool list: the shell, file access, background jobs, plan mode, subagents and workflows are mounted alongside `cyv` and `evidence`.
+- Never published. rc.2 already behaves essentially like the release; rc.3 refined it.
+
+## 0.4.0-rc.1 · 本地候选（未公开发布，工具范围已被后续候选取代）
+
+### 中文
+
+- 完整作品经创意、实际方案版本、小样三次认可。由宿主保存结构化用户答复并核对文件版本。
+- 支持灵活的逐镜计划、当前素材副本、FFmpeg 小样与完整视频、恢复后继续和完整新版交付。项目文件与可选的按场景经验库分别存放。
+- 提供隔离的宿主与真实媒体测试，以及[用户验收指南](docs/验证指南.md)。
+- **这次候选包的预设收窄过工具范围**：只挂了只读图片访问与一个研究子代理，没有通用 Shell 与写入。该收窄在 rc.3 已取消，正式 0.4.0 不限制通用工具。围绕这一版跑的隔离执行器测试只证明当时那个受限预设的行为，不能当作正式版的门禁证据。
+
+### English
+
+- Complete video projects get three scoped decisions for the creative direction, plan version, and representative sample. The Host records structured answers and checks artifact versions.
+- Supports flexible shot-by-shot plans, copied project media, FFmpeg samples and full videos, resumable approval state, and separate complete revisions. The optional experience library is organized by use case.
+- Includes isolated Host and real media verification and a [user acceptance guide](docs/验证指南.md).
+- **This candidate package narrowed its preset's tool list**: only read-only image access and one research subagent were mounted, with no general shell or writes. That was dropped in rc.3, and release 0.4.0 does not restrict the general tools. Isolated-executor tests run against this build only describe that restricted preset; they are not evidence about the release's gates.
+
 ## 0.3.0 · 2026-11-19
 
 ### 中文

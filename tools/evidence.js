@@ -19,7 +19,7 @@
  * 不做什么：不抽全片、不预抽、不判断画面好坏、不替用户下结论。
  */
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -41,6 +41,8 @@ const STATUSES = ['current', 'superseded'];
 
 /** 索引文件名，相对证据目录。 */
 const INDEX_NAME = 'index.json';
+const LOCAL_INPUT = ['-protocol_whitelist', 'file,pipe', '-format_whitelist',
+  'mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,avi,wav,mp3,aac,flac,ogg'];
 
 /** gc 的回收目录（不真删，留一条后悔路）。 */
 const TRASH_DIR = '_trash';
@@ -90,9 +92,13 @@ async function sha256(file) {
 
 /** 原子写：先写临时文件再 rename，避免中途失败把索引写坏。 */
 async function writeJsonAtomic(file, value) {
-  const tmp = `${file}.${process.pid}.tmp`;
-  await fsp.writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-  await fsp.rename(tmp, file);
+  const tmp = `${file}.${randomUUID()}.tmp`;
+  await fsp.writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+  try {
+    await fsp.rename(tmp, file);
+  } finally {
+    await fsp.rm(tmp, { force: true });
+  }
 }
 
 /** 找 ffmpeg/ffprobe。找不到就如实失败，不假装成功。 */
@@ -106,8 +112,8 @@ function requireTool(name) {
 /** 跑一条外部命令，失败时把 stderr 带出来。 */
 function run(cmd, args) {
   const r = spawnSync(cmd, args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-  if (r.error) die(`${cmd} 启动失败：${r.error.message}`);
-  if (r.status !== 0) die(`${cmd} 退出码 ${r.status}：${(r.stderr || '').trim().slice(0, 800)}`);
+  if (r.error) throw new Error(`${cmd} 启动失败：${r.error.message}`);
+  if (r.status !== 0) throw new Error(`${cmd} 退出码 ${r.status}：${(r.stderr || '').trim().slice(0, 800)}`);
   return r;
 }
 
@@ -119,7 +125,12 @@ function indexPath(dir) {
 
 async function readIndex(dir) {
   const file = indexPath(dir);
-  if (!fs.existsSync(file)) return [];
+  const info = await fsp.lstat(file).catch(error => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (!info) return [];
+  if (!info.isFile() || info.isSymbolicLink()) die('证据索引必须是普通文件。');
   let raw;
   try {
     raw = await fsp.readFile(file, 'utf8');
@@ -226,7 +237,7 @@ async function actionExtract(opts) {
   const fileName = `${id}.png`;
   const filePath = path.join(dir, fileName);
 
-  const args = ['-y', '-ss', String(t), '-i', opts.source, '-frames:v', '1'];
+  const args = ['-y', '-ss', String(t), ...LOCAL_INPUT, '-i', opts.source, '-frames:v', '1'];
   if (opts.crop) {
     // x,y,w,h 物理像素
     const parts = String(opts.crop).split(',').map((v) => Number(v.trim()));
@@ -235,10 +246,15 @@ async function actionExtract(opts) {
     }
     args.push('-vf', `crop=${parts[2]}:${parts[3]}:${parts[0]}:${parts[1]}`);
   }
-  args.push('-q:v', '2', filePath);
-  run('ffmpeg', args);
-
-  if (!fs.existsSync(filePath)) die('ffmpeg 说成功，但文件不在。别把返回码当结果。');
+  const temporary = path.join(dir, `.frame-${randomUUID()}.png`);
+  args.push('-q:v', '2', temporary);
+  try {
+    run('ffmpeg', args);
+    if (!fs.existsSync(temporary)) throw new Error('ffmpeg 未生成预期的抽帧文件。');
+    await fsp.rename(temporary, filePath);
+  } finally {
+    await fsp.rm(temporary, { force: true });
+  }
 
   const sourceSha = await sha256(opts.source);
 
@@ -356,9 +372,10 @@ async function actionMeasure(opts) {
     requireTool('ffmpeg');
     const r = spawnSync(
       'ffmpeg',
-      ['-i', opts.source, '-vf', 'blackdetect=d=0.04:pix_th=0.10', '-an', '-f', 'null', '-'],
+      [...LOCAL_INPUT, '-i', opts.source, '-vf', 'blackdetect=d=0.04:pix_th=0.10', '-an', '-f', 'null', '-'],
       { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 },
     );
+    if (r.error || r.status !== 0) die('黑帧测量失败：' + (r.error?.message ?? r.stderr?.trim()));
     const lines = (r.stderr || '').split('\n').filter((l) => l.includes('black_start'));
     const spans = [];
     for (const line of lines) {
@@ -375,11 +392,12 @@ async function actionMeasure(opts) {
     };
   } else if (kind === 'loudness') {
     requireTool('ffmpeg');
-    const args = ['-i', opts.source];
+    const args = [...LOCAL_INPUT, '-i', opts.source];
     if (opts.from !== undefined) args.push('-ss', String(Number(opts.from)));
     if (opts.to !== undefined) args.push('-to', String(Number(opts.to)));
     args.push('-af', 'ebur128=peak=true', '-f', 'null', '-');
     const r = spawnSync('ffmpeg', args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    if (r.error || r.status !== 0) die('音频测量失败：' + (r.error?.message ?? r.stderr?.trim()));
     const err = r.stderr || '';
     const summary = err.slice(err.lastIndexOf('Summary'));
     const I = summary.match(/I:\s*(-?[\d.]+)\s*LUFS/);
@@ -400,9 +418,10 @@ async function actionMeasure(opts) {
     requireTool('ffmpeg');
     const r = spawnSync(
       'ffmpeg',
-      ['-i', opts.source, '-af', 'silencedetect=noise=-50dB:d=0.3', '-f', 'null', '-'],
+      [...LOCAL_INPUT, '-i', opts.source, '-af', 'silencedetect=noise=-50dB:d=0.3', '-f', 'null', '-'],
       { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 },
     );
+    if (r.error || r.status !== 0) die('音频测量失败：' + (r.error?.message ?? r.stderr?.trim()));
     const err = r.stderr || '';
     const spans = [];
     let start = null;
