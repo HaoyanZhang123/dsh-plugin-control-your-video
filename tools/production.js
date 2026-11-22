@@ -225,14 +225,9 @@ function sha256Hex(text) {
   return createHash('sha256').update(text).digest('hex');
 }
 
-async function sha256File(filePath) {
+async function sha256File(filePath, signal) {
   const hash = createHash('sha256');
-  await new Promise((resolve, reject) => {
-    const stream = fs.createReadStream(filePath);
-    stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('error', reject);
-    stream.on('end', resolve);
-  });
+  for await (const chunk of fs.createReadStream(filePath, { signal })) hash.update(chunk);
   return hash.digest('hex');
 }
 
@@ -1250,14 +1245,13 @@ async function writeFrames(stream, state, frameCount, fps, signal, offsetFrames 
 
 // ── 探测与验证 ──────────────────────────────────────────────────────────────
 
-async function probeMedia(filePath, deps) {
+async function probeMedia(filePath, deps, demuxer) {
   const { stdout } = await runTool(
     deps.ffprobe,
     [
       '-v',
       'error',
-      '-protocol_whitelist',
-      PROTOCOL_WHITELIST,
+      ...inputPrelude(demuxer),
       '-print_format',
       'json',
       '-show_format',
@@ -1277,6 +1271,8 @@ async function probeMedia(filePath, deps) {
     formatName: String(parsed.format?.format_name ?? ''),
     durationSec: Number(parsed.format?.duration),
     video: streams.find((s) => s.codec_type === 'video') || null,
+    videoCount: streams.filter((s) => s.codec_type === 'video').length,
+    audioCodecs: streams.filter((s) => s.codec_type === 'audio').map((s) => s.codec_name),
     audio: streams.find((s) => s.codec_type === 'audio') || null,
     size: Number(parsed.format?.size),
   };
@@ -1361,6 +1357,102 @@ function verifyFinalProbe(probe, expectation) {
     throw new ProductionError('E_VERIFY', `成片没通过验证：${problems.join('；')}`, { problems });
   }
   assertFrameRate(probe, expectation.fps, '成片');
+}
+
+/** Adopt verified bytes from a project-local renderer while preserving its source file. */
+export async function registerExternalArtifact({ projectRoot, sourcePath, outputPath, expectation, signal }) {
+  signal?.throwIfAborted();
+  const root = assertProjectRoot(projectRoot);
+  const source = resolveInsideRoot(root, sourcePath, 'source');
+  const output = resolveInsideRoot(root, outputPath, 'outputPath');
+  if (path.extname(source).toLowerCase() !== '.mp4' || path.extname(output).toLowerCase() !== '.mp4') {
+    throw new ProductionError('E_PATH', '外部成片与登记目标使用项目内的 .mp4 文件。');
+  }
+  const { width, height, fps, durationSec, audio } = expectation;
+  if (![width, height].every(value => Number.isSafeInteger(value) && value > 0)
+    || ![fps, durationSec].every(value => Number.isFinite(value) && value > 0)
+    || !['none', 'optional', 'required'].includes(audio)) {
+    throw new ProductionError('E_SPEC', '外部成片的画幅、帧率、时长或声音要求无效。');
+  }
+  let current = root;
+  for (const segment of localSegments(sourcePath, 'source')) {
+    current = path.join(current, segment);
+    if ((await fsp.lstat(current)).isSymbolicLink()) {
+      throw new ProductionError('E_PATH', '外部成片路径必须使用作品内的普通目录和文件。');
+    }
+  }
+  const before = await fsp.lstat(source);
+  if (!before.isFile() || !before.size) throw new ProductionError('E_VERIFY', '外部成片不是非空普通文件。');
+
+  await prepareOutputDirectory(root, outputPath);
+  const staging = await fsp.mkdtemp(path.join(path.dirname(output), '.external-'));
+  const partial = path.join(staging, 'media.mp4');
+  const deps = { ffprobe: 'ffprobe', cwd: root, signal, timeoutMs: CAPS.probeTimeoutMs };
+  try {
+    await fsp.copyFile(source, partial, fs.constants.COPYFILE_EXCL);
+    signal?.throwIfAborted();
+    const after = await fsp.lstat(source);
+    if (before.ino !== after.ino || before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
+      throw new ProductionError('E_VERIFY', '复制期间外部成片发生变化，等待制作完成后重试。');
+    }
+    const head = Buffer.alloc(12);
+    const handle = await fsp.open(partial, 'r');
+    try {
+      await handle.read(head, 0, head.length, 0);
+    } finally {
+      await handle.close();
+    }
+    if (!head.subarray(4, 8).equals(Buffer.from('ftyp'))) {
+      throw new ProductionError('E_VERIFY', '外部成片缺少 MP4 文件标识。');
+    }
+    const digest = await sha256File(partial, signal);
+    const probe = await probeMedia(partial, deps, 'mov');
+    if (probe.videoCount !== 1 || probe.audioCodecs.some(codec => codec !== 'aac')) {
+      throw new ProductionError('E_VERIFY', '外部成片须包含一个 H.264 视频流。现有音轨须使用 AAC。');
+    }
+    const hasAudio = audio === 'optional' ? Boolean(probe.audio) : audio === 'required';
+    verifyFinalProbe(probe, { width, height, fps, durationSec, hasAudio });
+    if (!Number.isFinite(parseRational(probe.video.avg_frame_rate) || parseRational(probe.video.r_frame_rate))) {
+      throw new ProductionError('E_VERIFY', '外部成片无法读取有效帧率。');
+    }
+
+    const flags = ['-hide_banner', '-nostdin', '-loglevel', 'error', '-xerror', '-err_detect', 'explode'];
+    const decoded = await runTool('ffmpeg', [...flags, ...inputPrelude('mov'), '-i', partial,
+      '-map', '0:v:0', '-map', '0:a?', '-fps_mode', 'passthrough', '-progress', 'pipe:1', '-nostats', '-f', 'null', '-'],
+    { ...deps, timeoutMs: CAPS.renderTimeoutMs });
+    const frameCount = Number([...decoded.stdout.matchAll(/^frame=\s*(\d+)\s*$/gm)].at(-1)?.[1]);
+    if (!Number.isSafeInteger(frameCount) || frameCount < 1 || Math.abs(frameCount - Math.round(durationSec * fps)) > 1) {
+      throw new ProductionError('E_VERIFY', '解码后的帧数与获批的时长、帧率不一致。');
+    }
+    const seekFrames = [...new Set([0, Math.floor(frameCount / 2), frameCount - 1])];
+    // Seek slightly before each target so time-base rounding cannot skip the final frame.
+    const seekSeconds = seekFrames.map(frame => Math.max(0, (frame - 0.25) / fps));
+    for (const time of seekSeconds) {
+      const seek = await runTool('ffmpeg', [...flags, '-ss', time.toFixed(6), ...inputPrelude('mov'), '-i', partial,
+        '-map', '0:v:0', '-frames:v', '1', '-an', '-f', 'framemd5', 'pipe:1'], deps);
+      if (!/^\s*\d+,/m.test(seek.stdout)) {
+        throw new ProductionError('E_VERIFY', `外部成片在 ${time.toFixed(3)} 秒无法定位并解码画面。`);
+      }
+    }
+    const sha256 = await sha256File(partial, signal);
+    if (sha256 !== digest) throw new ProductionError('E_VERIFY', '待登记文件在验证期间发生变化。');
+    const artifact = { durationSec: probe.durationSec, sha256, verified: {
+      container: 'mp4', videoCodec: probe.video.codec_name, audioCodec: probe.audio?.codec_name ?? null,
+      decodedFrameCount: frameCount, seekSeconds,
+    } };
+    signal?.throwIfAborted();
+    try {
+      await fsp.link(partial, output);
+    } catch (error) {
+      if (error.code === 'EEXIST') {
+        throw new ProductionError('E_OUTPUT_EXISTS', `输出已存在：${outputPath}`, { artifact });
+      }
+      throw error;
+    }
+    return artifact;
+  } finally {
+    await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 // ── 渲染 ────────────────────────────────────────────────────────────────────

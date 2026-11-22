@@ -1,6 +1,7 @@
 // Runs against the installed DSH provider, with isolated storage and scripted human answers.
 const assert = require('node:assert/strict');
-const { copyFile, mkdtemp, readFile, rm, stat } = require('node:fs/promises');
+const { copyFile, mkdir, mkdtemp, readdir, readFile, rename, rm, stat } = require('node:fs/promises');
+const { execFileSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
@@ -30,6 +31,7 @@ async function main() {
   const ctx = new Context();
   const agents = new Map();
   const questions = [];
+  const mediaProviders = [];
   let approve = true;
   try {
     const patch = yaml.load(await readFile(join(__dirname, '..', 'cordis.patch.yml'), 'utf8'), { schema: entryListSchema });
@@ -67,6 +69,7 @@ async function main() {
       runtime.provide('systemPrompt', { tools() {}, section() {} });
       runtime.provide('agents', agents);
       runtime.provide('workingDirectory', { get: () => fixture });
+      runtime.provide('controlYourVideoMediaProviders', mediaProviders);
       runtime.on('user-questions/request', ({ questions: items }) => {
         questions.push(...items);
         return { answers: items.map(item => ({ id: item.id, selected: approve ? [item.intent.approve] : [] })) };
@@ -238,6 +241,118 @@ async function main() {
     const remembered = await call('read_experience', { query: '动画节奏样例' });
     assert.equal(remembered.hits.length, 1);
     console.log('Existing media was copied into a separate project, captioned with audio, and kept intact. Experience was saved and then searched only after structured test permission.');
+
+    const externalProject = await call('create', { project: 'external-local' });
+    const externalCall = (action, extra = {}) => call(action, { project: 'external-local', ...extra });
+    const deniedExternal = async (action, extra = {}) => {
+      const result = await run('cyv', { project: 'external-local', action, ...extra });
+      assert.equal(result.isError, true, JSON.stringify(result.content));
+    };
+    await externalCall('creative', { direction: '本地自选程序图形，沿用既定的两镜顺序。' });
+    const externalPlan = text
+      .replace('声音使用低音调测试同步。', '全片有意使用静默。')
+      .replace('低音测试音从片头开始。', '无音轨。')
+      .replace('同一低音测试音延续至片尾。', '保持静默。')
+      .replace('用程序动画 bars-sweep 生成 24 帧，叠加字幕「开场」，FFmpeg 编码。', '以本机外部命令合成第一秒测试图形。')
+      .replace('用程序动画 grid-drift 生成 24 帧，叠加字幕「成形」，FFmpeg 编码。', '以同一外部方式生成第二秒并导出完整文件。');
+    await externalCall('save_plan', { text: externalPlan });
+    await deniedExternal('prepare_run', { stage: 'sample' });
+    const external = { engine: 'allowlisted local FFmpeg fixture command outside cyv render',
+      canvas: { width: 320, height: 180, fps: 24 }, audio: 'none' };
+    assert.equal((await externalCall('approve_plan', { external, sampleShots: [1] })).approved, true);
+    const sampleRun = await externalCall('prepare_run', { stage: 'sample' });
+    assert.equal(sampleRun.expectation.durationSec, 1);
+    await deniedExternal('prepare_run', { stage: 'full' });
+    await mkdir(join(externalProject.root, 'work'), { recursive: true });
+    const renderIndependently = (relativeFile, duration, marker) => {
+      // Draw frames independently of cyv's FFmpeg recipes. Use FFmpeg only as the MP4 encoder.
+      const width = 320;
+      const height = 180;
+      const fps = 24;
+      const frames = Buffer.alloc(width * height * 3 * fps * duration, 18);
+      for (let frame = 0; frame < fps * duration; frame++) {
+        const left = 16 + frame * 4;
+        const start = frame * width * height * 3;
+        for (let y = 56; y < 120; y++) {
+          for (let x = left; x < left + 48; x++) {
+            const pixel = start + (y * width + x) * 3;
+            frames[pixel] = marker;
+            frames[pixel + 1] = 142;
+            frames[pixel + 2] = 62;
+          }
+        }
+      }
+      return execFileSync('ffmpeg', [
+        '-hide_banner', '-loglevel', 'error', '-f', 'rawvideo', '-pixel_format', 'rgb24', '-video_size', '320x180',
+        '-framerate', '24', '-i', 'pipe:0', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', join(externalProject.root, relativeFile),
+      ], { input: frames, windowsHide: true, timeout: 30000 });
+    };
+    renderIndependently('work/preview.mp4', 1, 220);
+    const sourcePreview = await readFile(join(externalProject.root, 'work/preview.mp4'));
+    const registeredSample = await externalCall('register_artifact', { runId: sampleRun.runId, source: 'work/preview.mp4' });
+    assert.equal(registeredSample.verified.decodedFrameCount, 24);
+    assert.equal(registeredSample.verified.seekSeconds.length, 3);
+    assert.deepEqual(await readFile(join(externalProject.root, 'work/preview.mp4')), sourcePreview);
+    await deniedExternal('prepare_run', { stage: 'full' });
+    assert.equal((await externalCall('approve_sample')).approved, true);
+    const fullRun = await externalCall('prepare_run', { stage: 'full' });
+    assert.equal(fullRun.expectation.durationSec, 2);
+    await deniedExternal('register_artifact', { runId: fullRun.runId, source: 'work/preview.mp4' });
+    renderIndependently('work/complete.mp4', 2, 220);
+    const registeredFull = await externalCall('register_artifact', { runId: fullRun.runId, source: 'work/complete.mp4' });
+    assert.equal(registeredFull.verified.decodedFrameCount, 48);
+    const priorOutput = await readFile(join(externalProject.root, registeredFull.path));
+    const revisionRun = await externalCall('prepare_run', { stage: 'revision', feedback: 'Change only the fixture animation.' });
+    renderIndependently('work/revised.mp4', 2, 100);
+    const registeredRevision = await externalCall('register_artifact', { runId: revisionRun.runId, source: 'work/revised.mp4' });
+    assert.notEqual(registeredRevision.path, registeredFull.path);
+    assert.notEqual(registeredRevision.digest, registeredFull.digest);
+    assert.equal(registeredRevision.verified.decodedFrameCount, 48);
+    assert.deepEqual(await readFile(join(externalProject.root, registeredFull.path)), priorOutput);
+    console.log('External local CLI through DSH: explicit run, 24-frame decoded sample, three seek points, approved 48-frame full and separate full revision.');
+
+    let sent = 0;
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO/jn14AAAAASUVORK5CYII=', 'base64');
+    mediaProviders.push({ id: 'mock-local', models: [{ id: 'fixture-image', capabilities: ['image'] }],
+      estimate: async () => 2,
+      generate: async (_request, options) => {
+        sent += 1;
+        assert.equal(options.maxCost, 2);
+        return { mime: 'image/png', bytes: png };
+      },
+    });
+    const selection = { provider: 'mock-local', model: 'fixture-image', currency: 'CNY', purpose: '制作隔离测试用图像' };
+    const beforeGrant = questions.length;
+    const mediaGrant = await externalCall('approve_media', { ...selection, costLimit: 4 });
+    assert.equal(mediaGrant.approved, true);
+    assert.equal(questions.length, beforeGrant + 2);
+    const dispatch = { ...selection, grantId: mediaGrant.grantId, operationId: 'fixture-request-one', text: '测试图 A' };
+    const first = await externalCall('generate_one_asset', dispatch);
+    const replay = await externalCall('generate_one_asset', dispatch);
+    assert.equal(replay.path, first.path);
+    await deniedExternal('generate_one_asset', { ...dispatch, text: '与同一操作不一致的文本' });
+    const second = await externalCall('generate_one_asset', { ...dispatch, operationId: 'fixture-request-two', text: '测试图 B' });
+    assert.notEqual(first.path, second.path);
+    assert.deepEqual(await readFile(join(externalProject.root, first.path)), png);
+    await deniedExternal('generate_one_asset', { ...dispatch, operationId: 'fixture-request-three' });
+    assert.equal(sent, 2);
+    assert.equal(questions.length, beforeGrant + 2);
+    const mediaRecords = join(fixture, 'isolated-host-data', 'control_your_video_media_grants', 'grants');
+    const [mediaRecordFile] = await readdir(mediaRecords);
+    const storedMedia = JSON.parse(await readFile(join(mediaRecords, mediaRecordFile), 'utf8')).record;
+    assert.equal(storedMedia.grants[mediaGrant.grantId].spent, 4);
+    assert.equal(storedMedia.operations['fixture-request-one'].artifactDigest, createHash('sha256').update(png).digest('hex'));
+    assert.equal(storedMedia.operations['fixture-request-two'].state, 'completed');
+    assert.equal(externalProject.root, join(fixture, 'external-local'));
+    await rename(externalProject.root, join(fixture, 'retired-external-fixture'));
+    await externalCall('create');
+    await deniedExternal('generate_one_asset', dispatch);
+    assert.equal(sent, 2);
+    const standalone = await externalCall('generate_one_asset', { ...selection, costLimit: 2, text: '独立单次测试' });
+    assert.deepEqual(await readFile(join(externalProject.root, standalone.path)), png);
+    assert.equal(sent, 3);
+    assert.equal(questions.length, beforeGrant + 4);
+    console.log('Mock media provider through DSH: separate scope/cost approvals, durable budget and asset digest, idempotent dispatch, no grant reuse after project replacement, and compatible single dispatch.');
   } finally {
     await ctx.fiber.dispose();
     await rm(fixture, { recursive: true, force: true });

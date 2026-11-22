@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
-import { renderProduction, validateProductionSpec } from '../tools/production.js';
+import { registerExternalArtifact, renderProduction, validateProductionSpec } from '../tools/production.js';
 
 const execute = promisify(execFile);
 const available = ['ffmpeg', 'ffprobe'].every(name => {
@@ -102,4 +102,40 @@ test('rejects an already cancelled render', async t => {
   const projectRoot = await workspace(t);
   await assert.rejects(renderProduction({ projectRoot, spec: fixtureSpec, outputPath: 'cancelled.mp4',
     signal: AbortSignal.abort() }), { code: 'E_CANCELLED' });
+});
+
+
+test('adopts a decodable external render without editing its source or replacing an output', { skip: !available }, async t => {
+  const projectRoot = await workspace(t);
+  const sourcePath = 'assets/外部画面.mp4';
+  const input = join(projectRoot, sourcePath);
+  await execute('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=24:duration=1',
+    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', input]);
+  const bytes = await readFile(input);
+  const outputPath = 'output/accepted.mp4';
+  const expectation = { width: 320, height: 180, fps: 24, durationSec: 1, audio: 'none' };
+  const options = { projectRoot, sourcePath, outputPath, expectation };
+  const accepted = await registerExternalArtifact(options);
+  assert.equal(accepted.verified.decodedFrameCount, 24);
+  assert.equal(accepted.verified.seekSeconds.length, 3);
+  assert.equal(accepted.verified.audioCodec, null);
+  assert.deepEqual(await readFile(join(projectRoot, outputPath)), bytes);
+  assert.deepEqual(await readFile(input), bytes);
+  await assert.rejects(registerExternalArtifact(options), { code: 'E_OUTPUT_EXISTS' });
+  assert.deepEqual(await readFile(join(projectRoot, outputPath)), bytes);
+});
+
+test('does not adopt a corrupt or mismatched external file', { skip: !available }, async t => {
+  const projectRoot = await workspace(t);
+  const sourcePath = 'assets/fake.mp4';
+  const outputPath = 'output/rejected.mp4';
+  const options = { projectRoot, sourcePath, outputPath,
+    expectation: { width: 320, height: 180, fps: 24, durationSec: 1, audio: 'required' } };
+  await writeFile(join(projectRoot, sourcePath), 'not a video');
+  await assert.rejects(registerExternalArtifact(options), { code: 'E_VERIFY' });
+  await execute('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=24:duration=1',
+    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', join(projectRoot, sourcePath)]);
+  await assert.rejects(registerExternalArtifact(options), { code: 'E_VERIFY' });
+  await assert.rejects(registerExternalArtifact({ ...options, sourcePath: '../outside.mp4' }), { code: 'E_PATH' });
+  await assert.rejects(stat(join(projectRoot, outputPath)), { code: 'ENOENT' });
 });

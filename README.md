@@ -13,7 +13,7 @@
   <a href="https://ffmpeg.org"><img src="https://img.shields.io/badge/FFmpeg-H.264%20%2B%20AAC-007808?logo=ffmpeg&logoColor=white" alt="FFmpeg with H.264 and AAC encoders"></a>
   <a href="https://github.com/deepseek-ai"><img src="https://img.shields.io/badge/DeepSeek%20Harness-plugin-3d8bff" alt="DeepSeek Harness plugin"></a>
   <a href="https://opensource.org/license/mit"><img src="https://img.shields.io/badge/license-MIT-3d8bff" alt="MIT License"></a>
-  <a href="https://github.com/HaoyanZhang123/dsh-plugin-control-your-video/releases/tag/v0.4.0"><img src="https://img.shields.io/badge/release-v0.4.0-7fd4ff" alt="Release v0.4.0"></a>
+  <a href="https://github.com/HaoyanZhang123/dsh-plugin-control-your-video/releases/tag/v0.5.0"><img src="https://img.shields.io/badge/release-v0.5.0-7fd4ff" alt="Release v0.5.0"></a>
 </p>
 
 ## Overview
@@ -26,6 +26,7 @@ This is a plugin bundle, not a timeline editor. It does not ship footage, fonts,
 
 - **Three checkpoints, recorded by the Host.** The creative direction, the complete plan version and the representative sample are each confirmed through DSH's user-question service. The answer is stored by the Host and bound to content: a plan approval carries the `plan.md` digest, the production recipe and the chosen sample shots; a sample approval carries the sample file's SHA-256. Editing the plan or approving another version invalidates the old approval.
 - **A complete plan before production.** `plan-check` reads `plan.md` and reports missing shots, per-shot and total duration mismatches, and assets it cannot verify. It accepts a shot table or per-shot subsections, and treats "not made yet but with a stated path" differently from "genuinely missing".
+- **An external local route.** Use your own code, graphics, or editor to produce MP4 files. `cyv` records the approved production stage and verifies decoded media before adopting it as the sample or final version.
 - **A local FFmpeg route.** Procedural graphics (four generated patterns), photos already in the project, or existing video as the picture; captions from a system font; audio as silence, a generated tone, a supplied track or a shot's own sound. It renders a representative sample, a full video and complete revisions, validating the recipe first and holding a per-project lock.
 - **Project folders and copied media.** A project is an ordinary folder in your workspace. Imported media is copied into `assets/` with hashes and the original stays untouched; when a name clashes the later file is renamed and both are kept. Unsafe paths and symbolic links are refused.
 - **An optional experience library.** It lives at `<workspace>/control-your-video/`, is not created until you ask for it, is organised by use case, and is only read or written after you agree.
@@ -43,7 +44,7 @@ Requirements:
 
 Install:
 
-1. In DSH's plugin manager, choose **install from a local directory** and point it at this package's root, or install the packaged archive `dsh-plugin-control-your-video-0.4.0.tgz` from the [v0.4.0 release](https://github.com/HaoyanZhang123/dsh-plugin-control-your-video/releases/tag/v0.4.0).
+1. In DSH's plugin manager, choose **install from a local directory** and point it at this package's root, or install the packaged archive `dsh-plugin-control-your-video-0.5.0.tgz` from the [v0.5.0 release](https://github.com/HaoyanZhang123/dsh-plugin-control-your-video/releases/tag/v0.5.0).
 2. **Restart DSH** when it prompts you. Bundle and preset changes only take effect after a restart.
 3. **Open a new session** and select **视频创作** (Video Creation). Preset changes never apply to sessions that are already open.
 4. Optional check: ask the assistant to run `cyv` with `local_capabilities`; it reports the `ffmpeg` and `ffprobe` versions and encoder availability it can actually see.
@@ -80,19 +81,23 @@ Nothing is moved out of your folders and no format is locked. The experience lib
 
 The three checkpoints are a **workflow constraint, not an unbypassable runtime gate.** The preset mounts the standard DSH tool list — shell, file access, background jobs, plan mode, subagents and workflows — so a local render can in principle be driven without going through `cyv`. What the checkpoints guarantee is that on the built-in `cyv` route, only a content version you approved continues; `tools/preset-policy.js` is a no-op and sets no plugin-wide gate. Separate DSH sessions, an OS shell outside DSH, and other installed Host plugins each have their own permissions.
 
-Generation models are optional. A Host plugin can offer model providers; a standalone media task then needs separate approvals for the model and for a spending cap, and one approval covers exactly one call. The provider interface in this repository has not been connected to a real service.
+Generation models are optional. Approve the concrete model and purpose, plus a separate spending limit. A project grant covers repeated requests within the same approved scope and budget. Validate actual provider behavior before real billing. See [the provider contract](docs/媒体提供方接口.md).
 
 ## Verification and known limits
 
-- `npm test` exercises plan validation, project creation and media import, approval binding, local production and the experience library. `tests/host-smoke.cjs` drives the whole flow through an installed DSH and a real FFmpeg: a representative sample, a full video, a complete revision beside the old one, a standalone caption job on imported footage with the original left intact, and a library save followed by an approved search.
+- The release rerun passes **104/104 automated tests**. Nineteen scripts pass syntax checks; 28 preset rows mount successfully, with two more disabled by Windows or the current configuration.
+- Isolated Host smoke tests use the real DSH tool executor, user-question service, JSON storage and local FFmpeg. They cover built-in sample/full/revision production, the external local route, standalone captions, the experience library, and mocked model grants and replay. Reopening storage twice preserves committed budget, artifact digests and the block after an unclear outcome.
 - Verified on Windows 11 with DSH Desktop `0.2.2-rc.5`, Node 24.22.1 and FFmpeg/FFprobe 9.0.1. macOS, Linux and other Host versions have not been tested.
-- The user completed a real minimal film on `0.4.0-rc.3` and reported that the core skills met the goal. That is a user report, not a recorded measurement: the film's title, technique and duration are not part of this repository.
-- There is no A/B comparison against a plain prompt, no multi-genre or multi-person run, and no library-reuse test across a second film.
+- The user completed a real minimal film on `0.4.0-rc.3` and reported that the core skills met the goal. That is a user report, not a recorded measurement of this release: the film's title, technique and duration are not part of this repository.
+- There is no A/B comparison against a plain prompt, no multi-genre or multi-person run, and no library-reuse test across a second film. Manual Desktop installation and a full real-world production on this version remain to be accepted.
+- Model tests use a mocked provider only; no real service was contacted and no charge occurred. A real provider must reliably enforce each call's `maxCost`. Billing mutual exclusion when multiple processes open the same Profile has not been tested.
 - `plan-check` judges completeness, duration and verifiable assets — not whether the plan is any good. A green report still needs your eyes and ears.
 
 ## Upgrade notes
 
-`cordis.patch.yml` changed in this version, so a restart per the Host prompt and a new session are required. If you installed 0.3.0 through a link — `npm link`, a linked local directory, or a `file:` dependency pointing at an old path — repoint it at the 0.4.0 package or this package directory first; otherwise the restarted Host keeps loading the old build. Keeping the previous version's directory, your project folders and your experience library costs nothing and is what lets you roll back, so there is no reason to delete them.
+`cordis.patch.yml` changed in this version, so restart when the Host prompts and open a **new session**. If an older version was installed through `npm link`, a linked local directory or a `file:` dependency, repoint it at the 0.5.0 package or this package directory before restarting; otherwise the Host keeps loading the old build.
+
+Older approval records remain readable. When they cannot prove a binding to the current complete plan, route and pinned inputs, review them again before the next formal production. Keep previous package directories, project folders and the experience library for rollback. OpenMotion and the other research libraries are not distributed with this package.
 
 ## Documentation
 

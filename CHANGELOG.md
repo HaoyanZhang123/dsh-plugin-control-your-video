@@ -8,6 +8,64 @@ Each version has two independent sections: a complete Chinese version first, the
 
 ---
 
+## 0.5.0 · 2026-11-22
+
+### 中文
+
+这一版把**自选制作路线、生成模型授权与结果恢复**接入同一条项目工作流。除了随包的 FFmpeg 路线，助手也可以用本机代码、图形或剪辑工具制作实际 MP4，再由 `cyv` 校验并登记为小样、全片或完整修订版。范围对照上一个公开发布版 `0.4.0`。
+
+**变更概览**：新增 4 项 · 优化 2 项
+
+**新增**
+
+- **外部本地制作路线**：`approve_plan` 可固定外部路线、关键输入、画幅、帧率与音轨要求；`prepare_run` 和 `register_artifact` 分别管理制作阶段与结果登记。登记的 MP4 需通过完整解码、首中尾定位和文件摘要校验，成功后另存，不覆盖旧结果。
+- **项目级模型授权**：`approve_media` 分别确认具体模型、用途、提示词传输范围和累计预算。同一项目在同一授权范围内可自主安排调用与重试；更换项目、模型、用途或扩大传输与付费范围时需要重新确认。
+- **可恢复的授权与工件记录**：宿主独立保存预算占用、操作摘要和工件指纹。相同操作标识重放原结果，不重复生成或计费；费用或交付结果不明时保留占用并停止该授权下的继续派发。
+- **扩展验证**：自动测试增至 104 项；隔离宿主冒烟新增外部本地路线和模拟媒体提供方，另通过两次真实 JSON 存储重开验证预算、重放和阻断状态可恢复。
+
+**优化**
+
+- **方案批准绑定完整执行范围**：批准身份覆盖完整方案、所选制作路线、固定输入与小样镜头选择。相同批准重放不重复询问；关键内容改变时不继承旧认可。历史批准记录仍可读取，但无法证明绑定时需在下一次正式制作前重审。
+- **创作意图与方案使用同一份 `plan.md`**：减少意图摘要和制作方案分置造成的断链；意图提问收敛为会改变方向的关键问题。README、插件详情、验收记录与验证指南同步到本版行为。
+
+**重要说明**
+
+- **没有连接真实生成服务。** 所有模型授权与计费行为均通过隔离宿主中的模拟提供方验证，本次没有产生真实上传或费用。实际提供方必须可靠执行每笔 `maxCost`；同一 Profile 被多个进程同时打开时的计费互斥未验证。
+- **审批是 `cyv` 路径的流程约束，不是不可绕过的运行时门禁。** 标准 Shell 与文件工具仍保留，独立创作可以不经 `cyv`。`plan-check` 判结构、时长和素材可核实性，不判方案或成片是否好看。
+- **升级后需要重启并新开会话。** `cordis.patch.yml` 有改动；链接安装的旧版需先把依赖指向 0.5.0。旧项目、旧成片与经验库保留，不需要清理。
+- **研究资产不随包分发。** OpenMotion、卡字、代码画风图鉴和真实感开关的暂存资料不属于本安装包，也不构成随包 MIT 内容。
+- **来源关系**：本版由已验收的本地候选 `0.4.0-rc.4.v2.2` 转为公开正式版；发布前仅更新版本、文档与发布说明，并修正意图 Skill 的提问约束，不改变制作和授权逻辑。
+- **验证范围**：Windows 11、DSH Desktop `0.2.2-rc.5`、Node 24.22.1、FFmpeg/FFprobe 9.0.1；104/104 自动测试通过，19 个脚本语法检查通过，预设 28 项挂载成功、另 2 项按平台或配置禁用。本版真实 Desktop 手动安装、完整真实作品、多平台与多用户验收仍未完成。
+
+### English
+
+This release brings **external production routes, generation-model grants and recoverable results** into one project workflow. Alongside the bundled FFmpeg route, the assistant can use local code, graphics tools or an editor to produce real MP4 files, then have `cyv` validate and register them as samples, full videos or complete revisions. The comparison baseline is the previous public release, `0.4.0`.
+
+**Summary**: Added 4 · Improved 2
+
+**Added**
+
+- **External local production**: `approve_plan` can pin the external route, key inputs, dimensions, frame rate and audio requirements. `prepare_run` and `register_artifact` manage production stages and result registration. An MP4 must pass full decoding, first/middle/last positioning and file-digest checks; accepted results are saved separately without replacing older ones.
+- **Project-scoped model grants**: `approve_media` separately confirms the concrete model, purpose, prompt-transfer scope and cumulative budget. Repeated calls and retries within the same project and grant are Agent-managed. Changing the project, model, purpose, transfer scope or spending scope requires a new decision.
+- **Recoverable grant and artifact records**: the Host stores committed budget, operation digests and artifact fingerprints independently. Replaying an operation ID returns its original result without another generation or charge. An unclear charge or delivery outcome keeps the commitment and blocks further dispatch under that grant.
+- **Expanded verification**: the automated suite now has 104 tests. Isolated Host smoke adds the external local route and a mocked media provider; two additional reopenings of real JSON storage verify that budget, replay and blocked states survive.
+
+**Improved**
+
+- **Plan approval binds the complete execution scope**: the approved identity covers the full plan, selected route, pinned inputs and sample-shot choice. Replaying the same approval does not ask again; material changes do not inherit it. Older records remain readable, but an approval whose binding cannot be established must be reviewed before the next formal production.
+- **Creative intent and the production plan share `plan.md`**: this removes the handoff gap between separate intent and plan files. Intent questions focus on decisions that change the direction. The README, plugin details, engineering record and acceptance guide now match this release.
+
+**Important Notes**
+
+- **No real generation service was contacted.** Model grants and billing behaviour were verified only with a mocked provider in an isolated Host; no real upload or charge occurred. A real provider must reliably enforce each call's `maxCost`. Billing mutual exclusion across multiple processes using the same Profile remains untested.
+- **Approvals constrain the `cyv` workflow; they are not an unbypassable runtime gate.** The standard shell and file tools remain available for independent work. `plan-check` checks structure, duration and verifiable assets, not creative or visual quality.
+- **Restart and open a new session after upgrading.** `cordis.patch.yml` changed, and linked installations must first be repointed at 0.5.0. Keep old projects, videos and the experience library; no cleanup is required.
+- **Research assets are not bundled.** The staged OpenMotion, kazi, awesome-code-animation and zhenshi-kaiguan materials are not part of this installation package and are not relicensed as bundled MIT content.
+- **Provenance**: this public release comes from the accepted local candidate `0.4.0-rc.4.v2.2`. Release preparation changed the version, documentation and release notes, and tightened the intent Skill's question guidance; it did not change the production or grant logic.
+- **Verification scope**: Windows 11, DSH Desktop `0.2.2-rc.5`, Node 24.22.1 and FFmpeg/FFprobe 9.0.1. All 104 automated tests passed, 19 scripts passed syntax checks, and 28 preset rows mounted with two more disabled by platform or configuration. Manual Desktop installation, a complete real production, other platforms and multi-user acceptance remain outstanding for this version.
+
+---
+
 ## 0.4.0 · 2026-11-21
 
 ### 中文
@@ -21,7 +79,8 @@ V1.3 正式版。0.3.0 把流程写成规则，这一版把规则做成可执行
 - **三个受控确认点落到宿主记录**：创意方向、完整方案版本、代表性小样。答案由 DSH 的用户问答服务取得并存进宿主的 JSON 存储，方案认可绑定 `plan.md` 内容摘要、制作清单与小样镜头选择，小样认可绑定样片的 SHA-256。改动文件或换一版方案，旧认可自动失效。
 - **`cyv` 工具**：项目新建与打开、素材复制、创意与方案、检查、小样与全片、修订、局部字幕、本机能力探测、插件内参考读取、经验库收录与检索都走这一个入口。
 - **本机 FFmpeg 受控制作链**：程序画面（四种生成图案）、项目内照片、既有视频三种画面来源，可叠字幕，音频支持无声、程序音调、素材音轨与沿用镜头原声；能出代表性小样、完整成片和完整修订版，渲染前校验清单并加项目锁。
-- **项目文件夹与素材副本**：项目是工作区里的普通文件夹；导入的素材复制进 `assets/` 并留哈希，原件不动。同名文件不被覆盖，后到的一份自动改名并保留两份；不安全路径与符号链接被拒，导入失败整批回滚。- **可选的经验库**：默认不建、不预铺占位文件；按使用场景归类，读库与收录都要用户明确同意，收录发生在交付之后。
+- **项目文件夹与素材副本**：项目是工作区里的普通文件夹；导入的素材复制进 `assets/` 并留哈希，原件不动。同名文件不被覆盖，后到的一份自动改名并保留两份；不安全路径与符号链接被拒，导入失败整批回滚。
+- **可选的经验库**：默认不建、不预铺占位文件；按使用场景归类，读库与收录都要用户明确同意，收录发生在交付之后。
 - **`plan-check` 契约检查**：不再要求固定十节与旧 11 列；认镜头表或逐镜小节两种写法，查缺镜、单镜与合计时长、可核实素材（已有／待产出／真缺三态）。
 - **可选生成模型接口**：宿主插件可提供模型服务；单次素材任务分别确认选型与费用上限，一次授权只对一次调用有效。
 - **公开资料核对预设**：把独立查证公开资料的活儿交给一个单独的预设，它只做网页检索与读取、文件查看、待办与提问，不承担创意和制作。

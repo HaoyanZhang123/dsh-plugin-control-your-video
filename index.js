@@ -13,13 +13,14 @@
  */
 
 import { execFile } from 'node:child_process';
-import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { link, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { extname, isAbsolute, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { createWorkflow, askOnce, existingProjectFile, withProjectLock } from './tools/workflow.js';
+import { createWorkflow, askOnce, digestText, existingProjectFile, withProjectLock } from './tools/workflow.js';
 import { discoverLocalCapabilities, discoverMediaModels, executeOneMediaRequest } from './tools/capabilities.js';
+import { approveMediaGrant, generateFromMediaGrant } from './tools/media-grants.js';
 
 const executeFile = promisify(execFile);
 
@@ -165,6 +166,7 @@ const ACTIONS = [
   'check_plan', 'approve_plan', 'render_sample', 'approve_sample', 'render_full',
   'revise_full', 'local_capabilities', 'media_models', 'subtitle_edit', 'save_experience',
   'read_reference', 'read_experience', 'list_assets', 'generate_one_asset',
+  'prepare_run', 'register_artifact', 'approve_media',
 ];
 
 const WORKFLOW_PARAMETERS = {
@@ -177,7 +179,22 @@ const WORKFLOW_PARAMETERS = {
     sources: { ...TEXT_LIST, description: '仅填当前用户提供或明确授权的现有本地素材路径。' },
     direction: { ...TEXT, description: 'creative 待用户确认的创意方向和关键保留项。' },
     text: { ...TEXT, description: 'save_plan 的完整 Markdown 或局部字幕文字。' },
-    spec: { type: 'object', additionalProperties: true, description: 'approve_plan 的 FFmpeg 制作清单。先看 local_capabilities。' },
+    spec: { type: 'object', additionalProperties: true, description: 'approve_plan 的 FFmpeg 制作清单，与 external 二选一。' },
+    external: {
+      type: 'object', additionalProperties: false, required: ['engine', 'canvas', 'audio'],
+      description: 'approve_plan 的自选本机路线。写明正式制作工具及需要固定的现有输入。',
+      properties: {
+        engine: { ...TEXT, description: '主 Agent 自选的路线，如本地 HTML 动画或剪辑工程。' },
+        inputs: { ...TEXT_LIST, description: '需固定的现有项目内依赖路径。仅列此次批准涉及的关键输入。' },
+        canvas: {
+          type: 'object', additionalProperties: false, required: ['width', 'height', 'fps'],
+          properties: { width: { type: 'integer' }, height: { type: 'integer' }, fps: { type: 'number' } },
+        },
+        audio: { type: 'string', enum: ['none', 'optional', 'required'] },
+      },
+    },
+    stage: { type: 'string', enum: ['sample', 'full', 'revision'], description: 'prepare_run 的制作阶段。' },
+    runId: { ...TEXT, description: 'register_artifact 使用先前 prepare_run 返回的 ID。' },
     sampleShots: { type: 'array', items: { type: 'integer' }, description: '最能验证方案关键效果的镜头 ID。' },
     sampleMaxSeconds: { type: 'number', description: '可选的小样时长上限。包含所有镜头时必填，须短于所选镜头总时长。' },
     feedback: { ...TEXT, description: '该轮已澄清的用户反馈。' },
@@ -187,7 +204,7 @@ const WORKFLOW_PARAMETERS = {
         properties: { id: { type: 'integer' }, text: TEXT },
       },
     },
-    source: { ...TEXT, description: '字幕或可选经验沉淀所用的项目内相对文件路径。' },
+    source: { ...TEXT, description: '字幕、经验沉淀或待登记 MP4 的项目内相对路径。外部渲染先写到例如 work/render.mp4，由 cyv 另存为正式结果。' },
     title: TEXT,
     scene: { ...TEXT, description: '条目按这个使用场景归类。' },
     notes: { ...TEXT, description: '适用条件、推荐理由、验证程度。' },
@@ -196,7 +213,10 @@ const WORKFLOW_PARAMETERS = {
     provider: TEXT,
     model: TEXT,
     currency: TEXT,
-    costLimit: { type: 'integer', description: '此操作授权的最小货币单位数，例如分。' },
+    costLimit: { type: 'integer', description: 'approve_media 指累计预算。独立单次请求指该次上限。金额用最小货币单位。' },
+    purpose: { ...TEXT, description: 'approve_media 的项目用途与获准文本范围；授权后调用传同一用途。' },
+    grantId: { ...TEXT, description: '用项目内已批准的模型与费用额度时，传 approve_media 返回的 ID。' },
+    operationId: { ...TEXT, description: '使用 grantId 时必填。每个素材请求一个稳定 ID；查询或恢复用原 ID。' },
     counter: { ...TEXT, description: '该经验的适用边界或反例。' },
   },
 };
@@ -287,14 +307,42 @@ async function generateOneAsset(project, args, execution, requestApproval, provi
     `${request.provider} / ${request.model}\n${request.costLimit} ${request.currency} 的最小货币单位 / minor units`);
   if (!costReceipt) return { approved: false };
   const result = await executeOneMediaRequest({ providers, request, approved: { ...request }, signal: execution.signal });
-  execution.signal?.throwIfAborted();
+  const path = await saveGeneratedAsset(project, result, request.operationId, execution.signal);
+  return { path, provider: request.provider, model: request.model };
+}
+
+async function saveGeneratedAsset(project, result, operationId, signal) {
+  signal?.throwIfAborted();
   const types = { 'image/png': '.png', 'image/jpeg': '.jpg', 'audio/wav': '.wav', 'video/mp4': '.mp4' };
   if (!Object.hasOwn(types, result?.mime) || !(result.bytes instanceof Uint8Array) || !result.bytes.byteLength
     || result.bytes.byteLength > 256 * 1024 * 1024) throw new Error('The media provider returned an unsupported or oversized artifact.');
+  const header = Buffer.from(result.bytes.subarray(0, 12));
+  const hasSignature = {
+    'image/png': () => header.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')),
+    'image/jpeg': () => header.subarray(0, 3).equals(Buffer.from('ffd8ff', 'hex')),
+    'audio/wav': () => header.subarray(0, 4).toString('ascii') === 'RIFF' && header.subarray(8, 12).toString('ascii') === 'WAVE',
+    'video/mp4': () => header.subarray(4, 8).toString('ascii') === 'ftyp',
+  };
+  if (!hasSignature[result.mime]()) throw new Error('The generated bytes do not match the declared media format.');
+  if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(operationId)) throw new Error('Missing Host asset ID.');
   const dest = await ensurePlainDirectories(project.root, ['assets']);
-  const name = `generated-${request.operationId}${types[result.mime]}`;
-  await writeFile(join(dest, name), result.bytes, { flag: 'wx', signal: execution.signal });
-  return { path: `assets/${name}`, provider: request.provider, model: request.model };
+  const name = `generated-${operationId}${types[result.mime]}`;
+  const stage = await mkdtemp(join(dest, '.cyv-generated-'));
+  try {
+    const temporary = join(stage, name);
+    await writeFile(temporary, result.bytes, { flag: 'wx', signal });
+    signal?.throwIfAborted();
+    await link(temporary, join(dest, name));
+  } finally {
+    await rm(stage, { recursive: true, force: true }).catch(() => {});
+  }
+  return `assets/${name}`;
+}
+
+async function mediaProjectIdentity(root) {
+  const entry = await lstat(root, { bigint: true });
+  if (!entry.isDirectory() || entry.isSymbolicLink()) throw new Error('The existing project directory is required.');
+  return `${entry.dev}:${entry.ino}:${entry.birthtimeNs}`;
 }
 
 async function saveApprovedExperience(project, workspace, args, execution, requestApproval) {
@@ -316,7 +364,7 @@ async function saveApprovedExperience(project, workspace, args, execution, reque
 }
 
 export async function apply(ctx) {
-  const [{ openProject, importAssets, listAssets }, { inspectPlan }, production] = await Promise.all([
+  const [{ openProject, importAssets, listAssets, sha256File }, { inspectPlan }, production] = await Promise.all([
     import('./tools/project.js'), import('./tools/plan-check.js'), import('./tools/production.js'),
   ]);
   const store = ctx.controlYourVideoStore;
@@ -329,6 +377,7 @@ export async function apply(ctx) {
       return spec;
     },
     render: production.renderProduction,
+    registerExternal: production.registerExternalArtifact,
     locks: store.locks,
   });
   const exclusive = (project, callback) => withProjectLock(store.locks, project.root, callback);
@@ -346,7 +395,10 @@ export async function apply(ctx) {
     async execute(args, execution) {
       const workspace = hostProjectScope(ctx, execution);
       if (args.action === 'local_capabilities') {
-        return JSON.stringify({ ...await discoverLocalCapabilities(execution.signal), recipe: RECIPE_GUIDE });
+        const capabilities = await discoverLocalCapabilities(execution.signal);
+        return JSON.stringify({ ...capabilities, recipe: RECIPE_GUIDE,
+          externalArtifactVerification: capabilities.ffmpeg.available && capabilities.ffprobe.available,
+        });
       }
       if (args.action === 'media_models') {
         return JSON.stringify({ models: discoverMediaModels(ctx.get('controlYourVideoMediaProviders') ?? []) });
@@ -377,9 +429,33 @@ export async function apply(ctx) {
       const project = await open(workspace, args.project, args.action === 'create');
       if (args.action === 'create' || args.action === 'open') return JSON.stringify({ root: project.root });
       if (args.action === 'list_assets') return JSON.stringify(await listAssets(project));
-      if (args.action === 'generate_one_asset') {
-        return exclusive(project, async () => JSON.stringify(await generateOneAsset(project, args, execution, requestApproval,
-          ctx.get('controlYourVideoMediaProviders') ?? [])));
+      if (args.action === 'approve_media' || args.action === 'generate_one_asset') {
+        const providers = ctx.get('controlYourVideoMediaProviders') ?? [];
+        return exclusive(project, async () => {
+          if (args.action === 'generate_one_asset' && args.grantId === undefined && args.operationId === undefined) {
+            return JSON.stringify(await generateOneAsset(project, args, execution, requestApproval, providers));
+          }
+          // A different project created later at the same path must get new approvals.
+          const identity = await mediaProjectIdentity(project.root);
+          const storageKey = key => digestText(`${identity}\0${key}`);
+          const mediaStore = {
+            get: key => store.mediaGrants.get(storageKey(key)),
+            async put(key, value) {
+              if (await mediaProjectIdentity(project.root) !== identity) throw new Error('The project directory was replaced.');
+              return store.mediaGrants.put(storageKey(key), value);
+            },
+          };
+          if (args.action === 'approve_media') {
+            return JSON.stringify(await approveMediaGrant({ project, args, execution, requestApproval, providers, store: mediaStore }));
+          }
+          return JSON.stringify(await generateFromMediaGrant({ project, args, execution, providers, store: mediaStore,
+            readArtifactDigest: path => sha256File(existingProjectFile(project.root, path)),
+            async saveArtifact(artifact, id) {
+              if (await mediaProjectIdentity(project.root) !== identity) throw new Error('The project directory was replaced.');
+              return saveGeneratedAsset(project, artifact, id, execution.signal);
+            },
+          }));
+        });
       }
       if (args.action === 'import_assets') {
         if (!args.sources?.length || args.sources.length > 100) throw new Error('Choose 1–100 current project inputs.');
@@ -400,7 +476,7 @@ export async function apply(ctx) {
         return exclusive(project, () => withProjectLock(store.locks, workspace, async () =>
           JSON.stringify(await saveApprovedExperience(project, workspace, args, execution, requestApproval))));
       }
-      if (args.action === 'approve_plan') {
+      if (args.action === 'approve_plan' && args.external === undefined) {
         const ready = await discoverLocalCapabilities(execution.signal);
         if (!ready.localProduction || (args.spec?.audio?.mode !== 'none' && !ready.aac)) {
           throw new Error('The local FFmpeg/FFprobe encoders required by this plan are unavailable.');
