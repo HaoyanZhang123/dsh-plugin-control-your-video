@@ -167,9 +167,10 @@ async function ensureDir(dir) {
  * 去重键：同一 (revision, shot, t, purpose) 只存一份。
  * 返回命中的 current 条目或 undefined。
  */
-function findDuplicate(entries, revision, shot, t, purpose) {
+function findDuplicate(entries, revision, shot, t, purpose, sheet = false) {
   return entries.find(
     (e) =>
+      isSheet(e) === sheet &&
       e.revision === revision &&
       Number(e.shot) === Number(shot) &&
       Math.abs(Number(e.t) - Number(t)) < 0.05 &&
@@ -179,10 +180,11 @@ function findDuplicate(entries, revision, shot, t, purpose) {
 }
 
 /** 新修订到手后，把同 (shot, t, purpose) 的旧修订标 superseded（旧文件不删）。 */
-function supersedeOlder(entries, revision, shot, t, purpose) {
+function supersedeOlder(entries, revision, shot, t, purpose, sheet = false) {
   let changed = 0;
   for (const e of entries) {
     if (
+      isSheet(e) === sheet &&
       e.revision !== revision &&
       Number(e.shot) === Number(shot) &&
       Math.abs(Number(e.t) - Number(t)) < 0.05 &&
@@ -295,6 +297,120 @@ async function actionExtract(opts) {
   await writeIndex(dir, entries);
   log(`已抽取：${fileName}`);
   if (!opts.question) log('注意：没写 --question。这条证据暂时回答不了任何问题，看之前先补上。');
+  if (superseded) log(`已把 ${superseded} 条同键的旧修订标为 superseded（旧文件保留）。`);
+}
+
+// ── 动作：sheet（联系表） ────────────────────────────────────────────────────
+
+/** 带 span 的是联系表；它和同键的单帧证据互不替代。 */
+function isSheet(entry) {
+  return typeof entry.span === 'number';
+}
+
+/**
+ * 把一段时间里的若干帧拼成一张联系表。
+ *
+ * 为什么需要它：单帧看不出运动。判"这一段动得顺不顺""节奏对不对"要看到连续变化，
+ * 而一次一帧地抽既慢又会丢掉帧间的顺序关系。联系表是**导航级**证据——它让你知道
+ * 该回看哪几秒、这段时间里发生了什么，但它仍然不能代替连续观看。
+ */
+async function actionSheet(opts) {
+  requireTool('ffmpeg');
+  const dir = opts.dir;
+  await ensureDir(dir);
+  if (!opts.source) die('缺少 --source（成片或素材的绝对/相对路径）。');
+  if (!fs.existsSync(opts.source)) die(`--source 不存在：${opts.source}`);
+  if (!opts.revision) die('缺少 --revision（如 r1、r2）。');
+  if (!opts.shot) die('缺少 --shot（镜号，整数）。');
+
+  const t = toTenths(opts.t === undefined ? NaN : opts.t);
+  const span = Number(opts.span === undefined ? 2 : opts.span);
+  if (!Number.isFinite(span) || span <= 0 || span > 30) {
+    die('--span 是这张表覆盖的秒数，取 0—30（默认 2）。');
+  }
+  const count = Number(opts.count === undefined ? 6 : opts.count);
+  if (!Number.isInteger(count) || count < 2 || count > 12) {
+    die('--count 是抽几帧，取 2—12（默认 6）。');
+  }
+  const cols = Number(opts.cols === undefined ? 3 : opts.cols);
+  if (!Number.isInteger(cols) || cols < 1 || cols > count) {
+    die('--cols 是列数，取 1—count（默认 3）。');
+  }
+  const purpose = opts.purpose || 'motion';
+  if (!PURPOSES.includes(purpose)) {
+    die(`--purpose 只能是 ${PURPOSES.join(' / ')}，收到 ${opts.purpose}。`);
+  }
+
+  const rows = Math.ceil(count / cols);
+  const id = makeId(opts.revision, opts.shot, t, purpose, `-sheet${count}x${cols}`);
+  const fileName = `${id}.png`;
+  const filePath = path.join(dir, fileName);
+
+  const entries = await readIndex(dir);
+  const existing = entries.find((e) => e.id === id && e.status === 'current');
+  if (existing && !opts.force) {
+    log(`已存在这张联系表，复用不重抽：${id}（要重抽加 --force）`);
+    return;
+  }
+
+  // 每格 480 宽：单张看得清，整张又能被一次读完。
+  const tileWidth = 480;
+  const filter = `fps=${(count / span).toFixed(6)},showinfo,scale=${tileWidth}:-2,`
+    + `tile=${cols}x${rows}:nb_frames=${count}:padding=4:margin=6`;
+  const temporary = path.join(dir, `.sheet-${randomUUID()}.png`);
+  let result;
+  try {
+    result = run('ffmpeg', [
+      // -copyts：让每格的时间点是成片里的绝对时间，不是从 0 开始的相对时间。
+      '-y', '-copyts', '-ss', String(t), '-t', String(span), ...LOCAL_INPUT, '-i', opts.source,
+      '-vf', filter, '-frames:v', '1', temporary,
+    ]);
+    if (!fs.existsSync(temporary)) throw new Error('ffmpeg 未生成预期的联系表文件。');
+    await fsp.rename(temporary, filePath);
+  } finally {
+    await fsp.rm(temporary, { force: true });
+  }
+
+  // 帧的真实时间点来自 showinfo：有了它，第几格对应第几秒不用猜。
+  const times = [...String(result.stderr || '').matchAll(/pts_time:\s*(-?[0-9.]+)/g)]
+    .map((m) => Number(m[1]))
+    .filter((v) => Number.isFinite(v))
+    .slice(0, count);
+
+  const sourceSha = await sha256(opts.source);
+  const entry = {
+    id,
+    file: fileName,
+    revision: String(opts.revision),
+    shot: Number(opts.shot),
+    t,
+    purpose,
+    span,
+    count,
+    cols,
+    times,
+    source_sha256: sourceSha,
+    derived_from: null,
+    created: nowIso(),
+    question: opts.question || '',
+    finding: '',
+    status: 'current',
+  };
+
+  const superseded = supersedeOlder(entries, opts.revision, opts.shot, t, purpose, true);
+  if (existing) {
+    entries[entries.indexOf(existing)] = { ...entry, question: opts.question || existing.question };
+  } else {
+    entries.push(entry);
+  }
+  await writeIndex(dir, entries);
+
+  log(`已生成联系表：${fileName}`);
+  log(`  覆盖 ${t}—${(t + span).toFixed(1)} 秒，${count} 帧，格 ${cols}×${rows}`
+    + (times.length === count ? '' : `（实际只取到 ${times.length} 帧）`));
+  if (times.length) log(`  各格时间：${times.map((v) => v.toFixed(2)).join(' / ')} 秒`);
+  log('  它用来导航和看变化，不能当成连续播放的结论。');
+  if (!opts.question) log('注意：没写 --question。这张表暂时回答不了任何问题，看之前先补上。');
   if (superseded) log(`已把 ${superseded} 条同键的旧修订标为 superseded（旧文件保留）。`);
 }
 
@@ -659,12 +775,16 @@ function parseArgs(argv) {
 function usage() {
   process.stdout.write(
     [
-      'evidence.js — 证据索引与方案检查工具（extract / measure / recall / gc / plan-check 五合一）',
+      'evidence.js — 证据索引与方案检查工具（extract / sheet / measure / recall / gc / plan-check）',
       '',
       '用法：',
       '  node tools/evidence.js extract --dir <work/evidence> --source <成片> \\',
       '      --revision r3 --shot 4 --t 12.4 --purpose look \\',
       '      [--question "12.4 秒这条字幕有没有压到人脸？"] [--crop x,y,w,h] [--force]',
+      '',
+      '  node tools/evidence.js sheet --dir <work/evidence> --source <成片> \\',
+      '      --revision r3 --shot 4 --t 12.4 --span 2 --count 6 [--cols 3] \\',
+      '      [--purpose motion] [--question "这一段进入时人物有没有停住？"] [--force]',
       '',
       '  node tools/evidence.js measure --dir <work/evidence> --source <成片> \\',
       '      --revision r3 --shot 4 --kind duration|black|loudness|silence [--t 0] [--purpose mix]',
@@ -698,6 +818,7 @@ async function main() {
 
   const table = {
     extract: actionExtract,
+    sheet: actionSheet,
     measure: actionMeasure,
     recall: actionRecall,
     gc: actionGc,
@@ -707,7 +828,7 @@ async function main() {
   const fn = table[action];
   if (!fn) {
     usage();
-    die(`未知动作 ${action}。只有 extract / measure / recall / gc / plan-check 五个。`);
+    die(`未知动作 ${action}。只有 extract / sheet / measure / recall / gc / plan-check 六个。`);
   }
 
   await fn(opts);

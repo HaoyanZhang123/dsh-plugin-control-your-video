@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { createWorkflow, askOnce, digestText, existingProjectFile, withProjectLock } from './tools/workflow.js';
 import { discoverLocalCapabilities, discoverMediaModels, executeOneMediaRequest } from './tools/capabilities.js';
-import { approveMediaGrant, generateFromMediaGrant } from './tools/media-grants.js';
+import { approveMediaGrant, approveMediaFromReceipt, generateFromMediaGrant } from './tools/media-grants.js';
 
 const executeFile = promisify(execFile);
 
@@ -35,6 +35,7 @@ const STATUSES = ['current', 'superseded', 'all'];
 /** 每个动作接受的 flag。超出的参数直接忽略，避免转发出脚本不认识的东西。 */
 const FLAGS = {
   extract: ['dir', 'source', 'revision', 'shot', 't', 'purpose', 'question', 'crop', 'force'],
+  sheet: ['dir', 'source', 'revision', 'shot', 't', 'purpose', 'question', 'span', 'count', 'cols', 'force'],
   measure: ['dir', 'source', 'revision', 'shot', 'kind', 't', 'purpose'],
   recall: ['dir', 'shot', 'revision', 'purpose', 'status', 'from', 'to', 'id'],
   gc: ['dir', 'yes'],
@@ -65,7 +66,7 @@ function buildArgv(action, args) {
   }
 
   if (!args.dir) throw new Error('缺少 dir：要给作品文件夹（plan-check）或证据目录（其余动作）的绝对路径。');
-  if ((action === 'extract' || action === 'measure') && !args.source) {
+  if ((action === 'extract' || action === 'sheet' || action === 'measure') && !args.source) {
     throw new Error(`action=${action} 需要 source：要给被取证的成片路径。`);
   }
 
@@ -104,7 +105,7 @@ const PARAMETERS = {
   properties: {
     action: {
       type: 'string',
-      enum: ['extract', 'measure', 'recall', 'plan-check'],
+      enum: ['extract', 'sheet', 'measure', 'recall', 'plan-check'],
       description: '抽帧、测量时长/黑帧/响度、查本项目证据或检查当前计划。',
     },
     project: { type: 'string', description: '相对于当前工作区的已存在作品目录。' },
@@ -142,6 +143,18 @@ const PARAMETERS = {
       type: 'string',
       enum: KINDS,
       description: 'measure 必填：要测什么。',
+    },
+    span: {
+      type: 'number',
+      description: 'sheet 可选：这张联系表覆盖多少秒，0—30，默认 2。',
+    },
+    count: {
+      type: 'integer',
+      description: 'sheet 可选：抽几帧拼一张，2—12，默认 6。',
+    },
+    cols: {
+      type: 'integer',
+      description: 'sheet 可选：几列，1—count，默认 3。',
     },
     from: { type: 'number', description: 'recall 可选：时间下界（秒）。' },
     to: { type: 'number', description: 'recall 可选：时间上界（秒）。' },
@@ -197,6 +210,22 @@ const WORKFLOW_PARAMETERS = {
     runId: { ...TEXT, description: 'register_artifact 使用先前 prepare_run 返回的 ID。' },
     sampleShots: { type: 'array', items: { type: 'integer' }, description: '最能验证方案关键效果的镜头 ID。' },
     sampleMaxSeconds: { type: 'number', description: '可选的小样时长上限。包含所有镜头时必填，须短于所选镜头总时长。' },
+    media: {
+      type: 'array',
+      maxItems: 8,
+      description: 'approve_plan 可选：这份方案会用到哪些具体模型。它与其他关键技术一起随方案获批，之后直接用返回的 grantId 生成，不再重复询问选型。',
+      items: {
+        type: 'object', additionalProperties: false,
+        required: ['provider', 'model', 'purpose', 'currency', 'costLimit'],
+        properties: {
+          provider: TEXT,
+          model: TEXT,
+          purpose: { ...TEXT, description: '这条授权覆盖的项目用途与文本范围，写一行。' },
+          currency: { ...TEXT, description: '三位大写货币代码，例如 USD。' },
+          costLimit: { type: 'integer', description: '这一次授权的累计费用上限，最小货币单位。' },
+        },
+      },
+    },
     feedback: { ...TEXT, description: '该轮已澄清的用户反馈。' },
     changes: {
       type: 'array', items: {
@@ -378,6 +407,17 @@ export async function apply(ctx) {
     },
     render: production.renderProduction,
     registerExternal: production.registerExternalArtifact,
+    async mintPlanMedia({ project: target, receipt, media, planDigest, execution: runContext }) {
+      const providers = ctx.get('controlYourVideoMediaProviders') ?? [];
+      const { store: mediaStore } = await mediaStoreFor(target);
+      const grants = [];
+      for (const declaration of media) {
+        grants.push(await approveMediaFromReceipt({
+          project: target, declaration, execution: runContext, providers, store: mediaStore, receipt, planDigest,
+        }));
+      }
+      return grants;
+    },
     locks: store.locks,
   });
   const exclusive = (project, callback) => withProjectLock(store.locks, project.root, callback);
@@ -386,6 +426,22 @@ export async function apply(ctx) {
     return openProject(workspace, path, { create });
   };
   const output = { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] };
+
+  /** 授权记录的存储适配器：键里带项目身份，目录被换掉后旧授权不会跟过去。 */
+  const mediaStoreFor = async project => {
+    const identity = await mediaProjectIdentity(project.root);
+    const storageKey = key => digestText(`${identity}\0${key}`);
+    return {
+      identity,
+      store: {
+        get: key => store.mediaGrants.get(storageKey(key)),
+        async put(key, value) {
+          if (await mediaProjectIdentity(project.root) !== identity) throw new Error('The project directory was replaced.');
+          return store.mediaGrants.put(storageKey(key), value);
+        },
+      },
+    };
+  };
 
   ctx.tools.register({
     name: 'cyv',
@@ -436,20 +492,13 @@ export async function apply(ctx) {
             return JSON.stringify(await generateOneAsset(project, args, execution, requestApproval, providers));
           }
           // A different project created later at the same path must get new approvals.
-          const identity = await mediaProjectIdentity(project.root);
-          const storageKey = key => digestText(`${identity}\0${key}`);
-          const mediaStore = {
-            get: key => store.mediaGrants.get(storageKey(key)),
-            async put(key, value) {
-              if (await mediaProjectIdentity(project.root) !== identity) throw new Error('The project directory was replaced.');
-              return store.mediaGrants.put(storageKey(key), value);
-            },
-          };
+          const { identity, store: mediaStore } = await mediaStoreFor(project);
           if (args.action === 'approve_media') {
             return JSON.stringify(await approveMediaGrant({ project, args, execution, requestApproval, providers, store: mediaStore }));
           }
           return JSON.stringify(await generateFromMediaGrant({ project, args, execution, providers, store: mediaStore,
             readArtifactDigest: path => sha256File(existingProjectFile(project.root, path)),
+            resolvePlanDigest: () => sha256File(join(project.root, 'plan.md')).catch(() => null),
             async saveArtifact(artifact, id) {
               if (await mediaProjectIdentity(project.root) !== identity) throw new Error('The project directory was replaced.');
               return saveGeneratedAsset(project, artifact, id, execution.signal);

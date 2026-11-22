@@ -660,7 +660,47 @@ export async function withProjectLock(locks, root, operation) {
   }
 }
 
-export function createWorkflow({ store, requestApproval, inspectPlan, validateSpec, render, registerExternal, locks = new Set() }) {
+/**
+ * 方案里可以顺带声明媒体用法：型号、用途、累计上限、货币。
+ *
+ * 这里只校验形状；型号是否真被宿主配置、货币与金额是否可受理，由 media-grants 判。
+ * 分开的理由：形状错了是调用方写错，应在提问之前就失败；配置错了是环境问题，
+ * 那条错误有它自己的文案。
+ */
+function validateMediaDeclarations(value) {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value) || value.length === 0 || value.length > 8) {
+    throw new Error('args.media 要写成 1—8 条媒体声明，每条含 provider、model、purpose、currency、costLimit。');
+  }
+  return value.map((item, index) => {
+    const label = `media[${index}]`;
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`${label} 必须是对象。`);
+    const picked = {};
+    for (const key of ['provider', 'model', 'purpose', 'currency']) {
+      if (typeof item[key] !== 'string' || !item[key].trim()) throw new Error(`${label}.${key} 必须是非空文本。`);
+      picked[key] = item[key].trim();
+    }
+    if (!/^[A-Z]{3}$/.test(picked.currency)) throw new Error(`${label}.currency 要是三位大写货币代码，例如 USD。`);
+    if (!Number.isSafeInteger(item.costLimit) || item.costLimit < 0) {
+      throw new Error(`${label}.costLimit 要用最小货币单位的整数，表示这一次授权的累计上限。`);
+    }
+    picked.costLimit = item.costLimit;
+    return picked;
+  });
+}
+
+/** 把媒体声明写进批准问题的正文：用户批准的就是这里看到的东西。 */
+function mediaDetail(media) {
+  if (!media) return '';
+  const rows = media.map((item, index) => `${index + 1}. ${item.provider} / ${item.model}\n`
+    + `   用途 / Purpose: ${item.purpose}\n`
+    + `   累计上限 / Cumulative ceiling: ${item.costLimit} ${item.currency} 最小货币单位 / minor units\n`
+    + '   只发送提示词文本；不上传文件、素材或成片。'
+    + ' Only project prompt text is sent; no files or assets are uploaded.');
+  return `\n\n媒体与费用 / Media & cost\n\n${rows.join('\n\n')}`;
+}
+
+export function createWorkflow({ store, requestApproval, inspectPlan, validateSpec, render, registerExternal, mintPlanMedia, locks = new Set() }) {
   return async function workflow(project, args, ctx) {
     identity(ctx);
     const root = project.root;
@@ -731,6 +771,10 @@ export function createWorkflow({ store, requestApproval, inspectPlan, validateSp
           return { ...planReport(inspectPlan, root, current.text), digest: current.digest };
         }
         case 'approve_plan': {
+          const media = validateMediaDeclarations(args.media);
+          if (media && typeof mintPlanMedia !== 'function') {
+            throw new Error('这个宿主没有接上媒体授权服务，方案里不能顺带声明模型用法；改用 approve_media 单独授权。');
+          }
           const creative = requireCreative(state);
           const current = await loadPlan(root);
           const report = planReport(inspectPlan, root, current.text);
@@ -763,13 +807,15 @@ export function createWorkflow({ store, requestApproval, inspectPlan, validateSp
           }
           plan.bindingDigest = bindingDigestOf(plan);
           const previous = state.plan;
-          if (previous && isBoundPlan(previous) && previous.bindingDigest === plan.bindingDigest) {
-            // Same snapshot, same route, same sample scope: this exact scope is already approved.
+          const sameMediaScope = stableJson(previous?.mediaDeclarations ?? null) === stableJson(media);
+          if (previous && isBoundPlan(previous) && previous.bindingDigest === plan.bindingDigest && sameMediaScope) {
+            // Same snapshot, same route, same sample scope, same media declarations: already approved.
             return { approved: true, digest: current.digest, route: plan.route, needsUser: false, reused: true,
-              note: '同一方案正文、同一制作范围与样片选择：沿用这次批准。' };
+              ...(previous.media ? { media: previous.media } : {}),
+              note: '同一方案正文、同一制作范围、同一样片选择与同一媒体范围：沿用这次批准。' };
           }
           const legacy = Boolean(previous) && !isBoundPlan(previous);
-          const detail = approvalDetail(current, plan);
+          const detail = approvalDetail(current, plan, media);
           const receipt = await ask('批准这个完整方案版本并制作小样？ / Approve this plan version for sample production?', detail, true);
           if (!receipt) {
             if (legacy) {
@@ -779,12 +825,18 @@ export function createWorkflow({ store, requestApproval, inspectPlan, validateSp
             return { approved: false };
           }
           if ((await loadPlan(root)).digest !== current.digest) throw new Error('plan.md changed while awaiting approval.');
-          const approved = { ...plan, receipt, approvedAt: receipt.at };
+          // 同一条批准收据顺带签发媒体授权：用户批准的就是问题正文里写明的型号、用途与上限。
+          const mediaGrants = media
+            ? await mintPlanMedia({ project, receipt, media, planDigest: current.digest, execution: ctx })
+            : null;
+          const approved = { ...plan, receipt, approvedAt: receipt.at,
+            ...(media ? { mediaDeclarations: media, media: mediaGrants } : {}) };
           approved.bindingDigest = bindingDigestOf(approved);
           await assertPinnedInputs(root, approved, ctx.signal);
           await save({ ...state, creative, plan: approved,
             ...(legacy ? { legacyReview: { planDigest: previous.digest ?? null, askedAt: receipt.at, declined: false } } : {}) });
           return { approved: true, digest: current.digest, route: plan.route, needsUser: true,
+            ...(mediaGrants ? { media: mediaGrants } : {}),
             ...(legacy ? { recheckedLegacy: true } : {}) };
         }
         case 'render_sample': {
@@ -1035,9 +1087,10 @@ export function createWorkflow({ store, requestApproval, inspectPlan, validateSp
   };
 }
 
-function approvalDetail(current, plan) {
+function approvalDetail(current, plan, media = null) {
   const sampleLine = `小样镜头 / Sample shots: ${plan.sampleShots.join(', ')}`
     + (plan.sampleMaxSeconds === null ? '' : `，最长 ${plan.sampleMaxSeconds} 秒`);
+  const mediaBlock = mediaDetail(media);
   if (plan.route === 'external') {
     const inputs = plan.external.inputs.length
       ? plan.external.inputs.map(file => `- ${file.path} (${shortDigest(file.digest)})`).join('\n')
@@ -1046,10 +1099,10 @@ function approvalDetail(current, plan) {
       + `路线 / Route: 自选本机 · ${plan.external.engine}\n`
       + `画幅 / Canvas: ${plan.external.canvas.width}x${plan.external.canvas.height} @ ${plan.external.canvas.fps}fps\n`
       + `声音 / Audio: ${plan.external.audio}\n\n`
-      + `固定输入 / Pinned inputs\n\n${inputs}\n\n${sampleLine}`;
+      + `固定输入 / Pinned inputs\n\n${inputs}\n\n${sampleLine}${mediaBlock}`;
   }
   return `${current.text}\n\n---\n\n版本 / Version: \`${current.digest}\`\n\n${sampleLine}`
-    + `\n\n制作参数 / Production recipe\n\n\`\`\`json\n${JSON.stringify(plan.spec, null, 2)}\n\`\`\``;
+    + `\n\n制作参数 / Production recipe\n\n\`\`\`json\n${JSON.stringify(plan.spec, null, 2)}\n\`\`\`${mediaBlock}`;
 }
 
 export { askOnce, existingProjectFile, projectFile };

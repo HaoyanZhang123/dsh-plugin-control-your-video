@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
-  approveMediaGrant, generateFromMediaGrant, assertStoredMediaGrant,
+  approveMediaGrant, approveMediaFromReceipt, generateFromMediaGrant, assertStoredMediaGrant,
 } from '../tools/media-grants.js';
 import { digestText } from '../tools/workflow.js';
 
@@ -58,13 +58,18 @@ async function fixture(t, overrides = {}) {
     signal: new AbortController().signal,
   };
   const readArtifactDigest = async path => digestText(await readFile(join(root, path)));
-  const call = (fn, project, args) => fn({ project, args, execution, requestApproval, providers, store, saveArtifact, readArtifactDigest });
+  const call = (fn, project, args) => fn({ project, args, execution, requestApproval, providers, store, saveArtifact, readArtifactDigest,
+    ...(overrides.resolvePlanDigest ? { resolvePlanDigest: overrides.resolvePlanDigest } : {}) });
   return {
     root, other, saved, questions, dispatch, artifacts, providers,
     approve: (args = {}, project = { root }) => call(approveMediaGrant, project, { ...SCOPE, ...args }),
     generate: (args = {}, project = { root }) => call(generateFromMediaGrant, project, {
       ...SCOPE, text: TEXT, operationId: 'take-01', ...args,
     }),
+    approveFromReceipt: (declaration = {}, receipt, extra = {}, project = { root }) => approveMediaFromReceipt({
+      project, declaration: { ...SCOPE, ...declaration }, execution, providers, store, receipt, ...extra,
+    }),
+    setPlanDigest: fn => { overrides.resolvePlanDigest = fn; },
     answer: (...values) => { answers = values; },
     failPutOn: predicate => { failPut = predicate; },
     failArtifact: value => { saveFails = value; },
@@ -356,3 +361,57 @@ test('the old one-shot media tool keeps its own semantics', async () => {
   await assert.rejects(executeOneMediaRequest({ providers: [provider], request, approved }), /approval/);
   assert.equal(calls, 1);
 });
+
+const planReceipt = extra => ({
+  sessionId: 'root-session', callId: 'trusted-call', questionId: 'cyv-plan-1',
+  at: new Date().toISOString(), ...extra,
+});
+
+test('a plan approval receipt mints both required receipts without asking again', async t => {
+  const f = await fixture(t);
+  const result = await f.approveFromReceipt({}, planReceipt());
+
+  assert.equal(result.approved, true);
+  assert.equal(result.planBound, undefined, '没有方案摘要时不假装绑定');
+  assert.equal(f.questions.length, 0, '同一条批准不应该再问一次');
+
+  const grant = f.grant();
+  assert.deepEqual(grant.receipts.map(r => r.kind), ['model-and-scope', 'cumulative-cost']);
+  assert.deepEqual(grant.receipts.map(r => r.questionId), ['cyv-plan-1', 'cyv-plan-1']);
+  assert.equal(grant.mintedFrom, 'plan-approval');
+  assert.equal(grant.spent, 0);
+  assertStoredMediaGrant(f.record());
+
+  await assert.rejects(
+    () => f.approveFromReceipt({ model: 'model-z' }, planReceipt()),
+    /No matching media model/);
+  await assert.rejects(
+    () => f.approveFromReceipt({}, { sessionId: 'root-session', callId: 'trusted-call', at: new Date().toISOString() }),
+    /receipt/);
+});
+
+test('a plan-bound grant stops dispatching once the plan changes', async t => {
+  const f = await fixture(t);
+  const planDigest = 'a'.repeat(64);
+  const approved = await f.approveFromReceipt({}, planReceipt(), { planDigest });
+  assert.equal(approved.approved, true);
+  assert.equal(approved.planBound, true);
+  assert.equal(f.grant().planDigest, planDigest);
+
+  f.setPlanDigest(async () => 'b'.repeat(64));
+  await assert.rejects(() => f.generate({ grantId: approved.grantId }), /方案在批准后被改动/);
+  assert.equal(f.dispatch.length, 0, '失效的授权一次都不该派发出去');
+
+  f.setPlanDigest(async () => planDigest);
+  const ok = await f.generate({ grantId: approved.grantId });
+  assert.match(ok.path, /^assets\/generated-/);
+  assert.equal(f.dispatch.length, 1);
+});
+
+test('a plan-bound grant fails closed when the plan digest cannot be verified', async t => {
+  const f = await fixture(t);
+  const approved = await f.approveFromReceipt({}, planReceipt(), { planDigest: 'c'.repeat(64) });
+  await assert.rejects(() => f.generate({ grantId: approved.grantId }), /current plan digest/);
+  assert.equal(f.dispatch.length, 0);
+});
+

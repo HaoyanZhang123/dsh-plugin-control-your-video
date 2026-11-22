@@ -145,6 +145,10 @@ function assertGrant(id, grant) {
     throw new Error('Invalid media approval record: spent budget.');
   }
   if (!STATES.has(grant.state)) throw new Error('Invalid media approval record: grant state.');
+  // 随方案批准签发的 grant 记住当时的方案摘要；方案一改，它就不能再派发。
+  if (grant.planDigest !== undefined && !HEX.test(grant.planDigest)) {
+    throw new Error('Invalid media approval record: plan digest.');
+  }
   if (!Array.isArray(grant.receipts) || grant.receipts.length !== 2) {
     throw new Error('Media approval record: a grant needs its two Host receipts.');
   }
@@ -278,8 +282,51 @@ function summary(grant) {
     purpose: grant.purpose,
     state: grant.state,
     remaining: grant.costLimit - grant.spent,
+    ...(grant.planDigest ? { planBound: true } : {}),
     ...(grant.state === 'needs_reconciliation' ? { needsReconciliation: true } : {}),
   };
+}
+
+function readScope(store, root, fields) {
+  return readRecord(store, root).then(record => ({
+    record,
+    existing: Object.values(record.grants).find(grant => sameScope(grant, fields)) ?? null,
+  }));
+}
+
+/** 新建或更新一条 grant。调用方负责先问过用户、拿到收据。 */
+async function writeGrant({ store, root, record, existing, fields, costLimit, receipts, planDigest, mintedFrom }) {
+  const grant = existing
+    ? { ...existing, costLimit, receipts, updatedAt: new Date().toISOString() }
+    : {
+      id: randomUUID(), ...fields, costLimit, receipts, spent: 0, state: 'active',
+      createdAt: new Date().toISOString(),
+      ...(planDigest ? { planDigest } : {}),
+      ...(mintedFrom ? { mintedFrom } : {}),
+    };
+  await saveRecord(store, root, { ...record, grants: { ...record.grants, [grant.id]: grant } });
+  return summary(grant);
+}
+
+/** 校验一条媒体声明：字段、货币、上限，以及宿主是否真的配置了这个型号。 */
+function mediaFields(input, providers) {
+  const fields = {
+    provider: typeof input.provider === 'string' ? input.provider.trim() : '',
+    model: typeof input.model === 'string' ? input.model.trim() : '',
+    currency: typeof input.currency === 'string' ? input.currency.trim() : '',
+    purpose: purposeOf(input.purpose),
+  };
+  text(fields.provider, 'Provider');
+  text(fields.model, 'Model');
+  if (!CURRENCY.test(fields.currency)) throw new Error('Set the currency as a three-letter uppercase code.');
+  if (!Number.isSafeInteger(input.costLimit) || input.costLimit < 0) {
+    throw new Error('Set the cumulative spending ceiling in the smallest currency unit.');
+  }
+  const configured = discoverMediaModels(Array.isArray(providers) ? providers : []);
+  if (!configured.some(entry => entry.provider === fields.provider && entry.model === fields.model)) {
+    throw new Error('No matching media model is configured by the Host.');
+  }
+  return { fields, costLimit: input.costLimit };
 }
 
 /**
@@ -292,51 +339,77 @@ export async function approveMediaGrant({ project, args = {}, execution, request
   assertLive(execution);
   assertNoUpload(args);
   const root = rootOf(project);
-
-  const fields = {
-    provider: typeof args.provider === 'string' ? args.provider.trim() : '',
-    model: typeof args.model === 'string' ? args.model.trim() : '',
-    currency: typeof args.currency === 'string' ? args.currency.trim() : '',
-    purpose: purposeOf(args.purpose),
-  };
-  text(fields.provider, 'Provider');
-  text(fields.model, 'Model');
-  if (!CURRENCY.test(fields.currency)) throw new Error('Set the currency as a three-letter uppercase code.');
-  if (!Number.isSafeInteger(args.costLimit) || args.costLimit < 0) {
-    throw new Error('Set the cumulative spending ceiling in the smallest currency unit.');
-  }
-  const configured = discoverMediaModels(Array.isArray(providers) ? providers : []);
-  if (!configured.some(entry => entry.provider === fields.provider && entry.model === fields.model)) {
-    throw new Error('No matching media model is configured by the Host.');
-  }
+  const { fields, costLimit } = mediaFields(args, providers);
 
   return locked(root, async () => {
-    const record = await readRecord(store, root);
-    const existing = Object.values(record.grants).find(grant => sameScope(grant, fields));
+    const { record, existing } = await readScope(store, root, fields);
     if (existing) {
       if (existing.state !== 'active') return { ...summary(existing), reused: true };
-      if (existing.costLimit === args.costLimit) return { ...summary(existing), reused: true };
-      if (args.costLimit < existing.spent) {
+      if (existing.costLimit === costLimit) return { ...summary(existing), reused: true };
+      if (costLimit < existing.spent) {
         throw new Error(`This approval already holds ${existing.spent} ${existing.currency}; `
           + 'the ceiling cannot be set below the cost already committed.');
       }
-      const receipts = await askScope(requestApproval, execution, { ...fields, costLimit: args.costLimit });
+      const receipts = await askScope(requestApproval, execution, { ...fields, costLimit });
       if (!receipts) return { approved: false };
-      const grant = {
-        ...existing, costLimit: args.costLimit, receipts, updatedAt: new Date().toISOString(),
-      };
-      await saveRecord(store, root, { ...record, grants: { ...record.grants, [grant.id]: grant } });
-      return { ...summary(grant), reused: true, updated: true };
+      const updated = await writeGrant({ store, root, record, existing, fields, costLimit, receipts });
+      return { ...updated, reused: true, updated: true };
     }
 
-    const receipts = await askScope(requestApproval, execution, { ...fields, costLimit: args.costLimit });
+    const receipts = await askScope(requestApproval, execution, { ...fields, costLimit });
     if (!receipts) return { approved: false };
-    const grant = {
-      id: randomUUID(), ...fields, costLimit: args.costLimit, receipts, spent: 0,
-      state: 'active', createdAt: new Date().toISOString(),
-    };
-    await saveRecord(store, root, { ...record, grants: { ...record.grants, [grant.id]: grant } });
-    return summary(grant);
+    return writeGrant({ store, root, record, existing: null, fields, costLimit, receipts });
+  });
+}
+
+/**
+ * 随完整方案批准一并签发媒体授权。
+ *
+ * 为什么允许：产品规则是"选定的具体模型与其他关键技术写进完整逐镜方案，用户批准方案
+ * 即认可这些选择，之后不再重复询问选型"。方案里已经写明型号、用途、累计上限与拟外发
+ * 范围时，为同一个决定再问两次只是重复。
+ *
+ * 怎么做到：复用**同一条**宿主批准收据，派生出这条 grant 必需的两条 receipt
+ * （范围与累计费用），记账语义与 approveMediaGrant 完全一致——累计上限仍生效、
+ * 结果不明仍封锁、同 operationId 仍回放、只发提示词文本。
+ *
+ * 多出来的一条保护：grant 记住批准时的方案摘要（planDigest），方案改动后它不能再派发，
+ * 必须用新方案重新批准。这一条把"批准方案"与"能花这笔钱"绑在同一个版本上。
+ */
+export async function approveMediaFromReceipt({
+  project, declaration = {}, execution, providers = [], store, receipt, planDigest, mintedFrom = 'plan-approval',
+}) {
+  requireStore(store);
+  assertLive(execution);
+  assertNoUpload(declaration);
+  const root = rootOf(project);
+  if (!plain(receipt) || typeof receipt.questionId !== 'string' || !receipt.questionId) {
+    throw new Error('Plan-bound media authorization needs the Host receipt of the plan approval.');
+  }
+  const derived = ['sessionId', 'callId', 'questionId', 'at'];
+  const base = {};
+  for (const field of derived) base[field] = receipt[field];
+  assertReceipt({ kind: RECEIPT_KINDS[0], ...base });
+  const { fields, costLimit } = mediaFields(declaration, providers);
+  const receipts = RECEIPT_KINDS.map(kind => ({ kind, ...base }));
+  const binding = HEX.test(planDigest ?? '') ? planDigest : undefined;
+
+  return locked(root, async () => {
+    const { record, existing } = await readScope(store, root, fields);
+    if (existing) {
+      if (existing.state !== 'active' || existing.costLimit === costLimit) {
+        return { ...summary(existing), reused: true };
+      }
+      if (costLimit < existing.spent) {
+        throw new Error(`This approval already holds ${existing.spent} ${existing.currency}; `
+          + 'the ceiling cannot be set below the cost already committed.');
+      }
+      const updated = await writeGrant({ store, root, record, existing, fields, costLimit, receipts });
+      return { ...updated, reused: true, updated: true };
+    }
+    return writeGrant({
+      store, root, record, existing: null, fields, costLimit, receipts, planDigest: binding, mintedFrom,
+    });
   });
 }
 
@@ -370,7 +443,7 @@ function replay(operation, grant) {
  * 新 generate_one_asset：在已批准范围内重复调用。
  * 同一 operationId 与同一提示词回放已完成结果；参数变了明确拒绝。
  */
-export async function generateFromMediaGrant({ project, args = {}, execution, providers = [], store, saveArtifact, readArtifactDigest }) {
+export async function generateFromMediaGrant({ project, args = {}, execution, providers = [], store, saveArtifact, readArtifactDigest, resolvePlanDigest }) {
   if (typeof saveArtifact !== 'function' || typeof readArtifactDigest !== 'function') {
     throw new Error('Media dispatch requires the Host artifact writer and verifier.');
   }
@@ -429,6 +502,18 @@ export async function generateFromMediaGrant({ project, args = {}, execution, pr
 
     if (grant.state !== 'active' || blocked.has(grantId)) {
       throw blockedError(grantId, 'this approval needs cost reconciliation first.');
+    }
+    // 随方案签发的授权绑在批准时那一版方案上：方案改了，这次的"许可范围"就不再是同一件事。
+    if (grant.planDigest) {
+      if (typeof resolvePlanDigest !== 'function') {
+        throw new Error('This approval was issued with a plan; dispatch needs the current plan digest to verify it still applies.');
+      }
+      const current = await resolvePlanDigest();
+      signal?.throwIfAborted();
+      if (current !== grant.planDigest) {
+        throw new Error('完整方案在批准后被改动，这次附带的媒体授权已失效。'
+          + '用当前方案重新批准后再生成本镜素材；已花的预算仍记在原授权上。');
+      }
     }
     const mismatch = scopeMismatch(grant, provided);
     if (mismatch) throw new Error(mismatch);

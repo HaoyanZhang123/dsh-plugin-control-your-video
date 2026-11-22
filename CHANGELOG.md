@@ -8,6 +8,80 @@ Each version has two independent sections: a complete Chinese version first, the
 
 ---
 
+## 0.6.0 · 2026-11-22
+
+### 中文
+
+这一版重排**专业知识层**，并补上三处真正影响创作能力的东西：审美判断原本被写成"只能人判"，无旁白只有否定没有替代，模型选型要在方案之外再问两次。范围对照上一个公开发布版 `0.5.0`。
+
+**变更概览**：新增 5 项 · 优化 6 项 · 合并 7 个入口
+
+**新增**
+
+- **两条知识族**：`video-craft` 管"观众看到与听到的这一层"（症状分诊、叙事、视觉、运动、声音、剪辑、屏上文字、跨域裁决、审美判断写法）；`video-types` 管"怎么做出来、每条路线会怎么坏"（代码、实拍、三维、生成式、混合媒体）。两者各自带专业判断与按需索引，不是空壳路由。
+- **审美判断通道**：`video-review` 原先把"这镜好不好""有没有质感"判为"无判据、只能人判"，实际等于取消了专业评价。现在要求先拆成可观察的判断，再给一条含判断／依据／因果／可反驳条件／置信度／替代路线与代价的结论，只把"满不满意、值不值得发、要不要接受这个代价"留给用户。
+- **无旁白与纯视觉叙事**：新增 `video-craft/references/visual-storytelling.md`。此前只写了"这条片本来没有人声就不写"，没有给出画面、屏上字、声音三通道的分工与四种推进结构。
+- **方案内媒体授权**：`approve_plan` 可带 `media[]`（型号、用途、货币、累计上限）。同一条宿主批准收据派生出授权必需的两条 receipt，不再单独问一次选型；用户批准时在问题正文里看得到型号、上限与"只发提示词文本"的数据范围。授权记住批准时的方案摘要，方案一改即失效；无法核对摘要时拒绝派发。
+- **联系表取证**：`evidence` 新增 `sheet` 动作，把一段时间抽成一张网格图并记录每格的真实绝对时间。单帧看不出运动，这是"主动审美判断"最便宜的落地方式。
+
+**优化**
+
+- **编写规范去模板化**：删掉"五节骨架 / ≤150 行 / 3 示例 1 反例 / references 头两行固定格式"这组硬要求，保留并强化与代码耦合的五个共享接口、数值三问与"已被否掉的口径"清单。
+- **人设（Persona）**：改为技术中立（内置 FFmpeg 是兜底之一，不是主路线）；模型随完整方案一次确认；补"要给有依据的专业判断，但不能替用户决定满意"；补"没看过、没听过要如实说，别把静帧当成看过成片"；局部任务走各自短路径。
+- **数值冲突归一**：中文行高的 1.7–1.8（阅读型正文）与代码渲染的 1.15（撞行事故线）明确分家；Carbon 的产品 UI 时长表标注为"借快慢语义、不搬毫秒 token"；修正"24 fps 下 1 拍 = 12 帧"缺 BPM 条件的错误。
+- **私人路径移出发布包**：17 份文件里的本机资产路径全部迁到仓库根 `PROVENANCE.md`（不随包发布）；`docs/编写规范.md` 不再要求写工作区相对路径。
+- **型号快照移出 `skills/`**：5 份模型文档移到 `docs/model-notes/`，明确是带日期的历史快照、不作能力声明。
+- **`video-library` 与工具对齐**：旧参考按内容类型分目录，而工具按七类**使用场景**落盘——照着参考写会被工具拒绝。现在正文与工具一致，并区分项目素材、跨作品经验库、用户自己的研究库。
+
+**合并的入口**
+
+`video-visual`、`video-motion`、`video-sound`、`video-edit`、`video-script` 并入 `video-craft`；`video-code-visual`、`video-prompting` 并入 `video-types`。当前共 8 个注册入口、48 份按需参考。旧名字不再注册，迁移对照表在 `PROVENANCE.md`。
+
+**重要说明**
+
+- **兼容**：项目状态仍存在宿主存储域，键与字段不变，旧项目的批准记录可读；`plan.md` 契约与 `plan-check` 规则未改，旧方案仍能通过；经验库数据与目录不变；旧模型授权记录只增字段、不改语义。**唯一可见的不兼容是 Skill 名字变化。**
+- **升级需要重启并新开会话**：`cordis.patch.yml`、Skill 目录与文档都有改动。链接安装的旧版要先把依赖指向本包目录或新安装包。
+- **审批仍是流程约束，不是不可绕过的运行时门禁**：`tools/preset-policy.js` 仍是空实现，标准 Shell 与文件工具仍在。
+- **生成模型仍只支持提示词文本**：参考图、首尾帧、图生视频没有通道，需要时必须如实说明并商量替代。
+- **验证范围**：Windows 11、Node 24.22.1、FFmpeg/FFprobe 9.0.1。`npm test` 123/123 通过（含真实媒体用例与新增的结构、接线、联系表测试）；22 个脚本通过语法检查；预设 28 项挂载成功、另 2 项按平台或配置禁用；隔离宿主冒烟通过真实 DSH 执行器贯通七个节点。真实 Desktop 手动安装、完整真实作品、多平台与多用户验收仍未完成。
+
+### English
+
+This release reorganizes the **professional knowledge layer** and fixes three things that actually limited capability: aesthetic judgement had been written as "only a human can answer", no-narration had only a prohibition and no path, and model selection asked outside the plan twice. Scope is compared against the previous public release `0.5.0`.
+
+**At a glance**: 5 additions · 6 improvements · 7 entries merged
+
+**Additions**
+
+- **Two knowledge families.** `video-craft` covers *what the audience sees and hears* (symptom triage, narrative, visuals, motion, sound, editing, on-screen text, cross-domain arbitration, and how to phrase an aesthetic judgement). `video-types` covers *how it gets made and how each route breaks* (code, real footage, 3D, generative, mixed media). Both carry real judgement plus an on-demand index; neither is an empty router.
+- **A channel for aesthetic judgement.** `video-review` used to classify "does this shot feel good" and "does it have texture" as unanswerable without criteria, which in practice cancelled professional evaluation. It now requires decomposing the question into observable judgements, then stating one conclusion with judgement, evidence, cause, falsifying condition, confidence, and an alternative with its cost — leaving only satisfaction, publish-worthiness and accepting the cost to the user.
+- **No-narration and pure visual storytelling.** New `video-craft/references/visual-storytelling.md`. Previously the guidance only said "if the film has no voice, do not write one" and never assigned the work across picture, on-screen text and sound, nor offered sequencing structures.
+- **Media authorization inside the plan.** `approve_plan` accepts `media[]` (model, purpose, currency, cumulative ceiling). The single Host approval receipt derives both receipts a grant requires, so selection is not asked a second time; the approval body itself shows the model, the ceiling and the "prompt text only" data scope. The grant remembers the plan digest it was issued against, stops dispatching once the plan changes, and refuses to dispatch when the digest cannot be verified.
+- **Contact-sheet evidence.** A new `evidence` action `sheet` samples a time range into one grid image and records each cell's real, absolute timestamp. A single frame cannot show motion; this is the cheapest way to make active aesthetic judgement possible.
+
+**Improvements**
+
+- **Writing conventions de-templated.** Removed the mandated five-section skeleton, the ≤150-line ceiling, the three-examples-plus-one-counterexample quota and the fixed reference header format. Kept and strengthened the five code-coupled interfaces, the three questions every number must answer, and the list of already-rejected framings.
+- **Persona.** Technology-neutral (the bundled FFmpeg route is one fallback, not the main road); the model is confirmed once with the complete plan; added "give a grounded professional judgement, but do not decide satisfaction for the user"; added "say plainly what you have not watched or heard, and never treat stills as having watched the film"; local tasks get their own short paths.
+- **Conflicting numbers reconciled.** Chinese line-height 1.7–1.8 (reading text) and 1.15 (code-rendered collision threshold) are explicitly separated; the product-UI duration table is marked as borrowing the semantics of speed, not its millisecond tokens; the claim "one beat = 12 frames at 24 fps" is corrected to state that it depends on BPM.
+- **Private paths removed from the shipped package.** Machine-specific asset paths in 17 files moved to `PROVENANCE.md` at the repository root (not shipped); `docs/编写规范.md` no longer asks anyone to write workspace-relative paths.
+- **Model snapshots moved out of `skills/`.** Five model notes now live in `docs/model-notes/`, explicitly dated historical snapshots and not capability claims.
+- **`video-library` aligned with the tool.** The old references organized a library by content type while the tool writes seven **use-case** directories — following the references produced entries the tool rejects. The text now matches the tool and separates project assets, the cross-project library, and the user's own research library.
+
+**Merged entries**
+
+`video-visual`, `video-motion`, `video-sound`, `video-edit` and `video-script` are folded into `video-craft`; `video-code-visual` and `video-prompting` into `video-types`. Eight registered entries and 48 on-demand references remain. The old names are no longer registered; the migration table is in `PROVENANCE.md`.
+
+**Important notes**
+
+- **Compatibility.** Project state still lives in the Host store with unchanged keys and fields, so existing approval records remain readable; the `plan.md` contract and the `plan-check` rules are unchanged, so existing plans still pass; library data and directories are untouched; existing media grant records only gain an optional field. **The one visible incompatibility is the renamed skills.**
+- **Upgrading needs a restart and a new session.** `cordis.patch.yml`, the skill directories and the documentation all changed. A linked installation must be repointed at this package directory or the new archive first.
+- **Approval is still a process constraint, not an unbypassable runtime gate.** `tools/preset-policy.js` remains a no-op and the standard shell and file tools remain available.
+- **Generative models still accept prompt text only.** Reference images, first/last frames and image-to-video have no channel; when a work needs them the assistant must say so and discuss an alternative.
+- **Verification scope.** Windows 11, Node 24.22.1, FFmpeg/FFprobe 9.0.1. `npm test` passes 123/123 including real-media cases and the new structural, wiring and contact-sheet tests; 22 scripts pass a syntax check; 28 preset rows mount with 2 disabled by platform or configuration; the isolated Host smoke test drives the real DSH executor through seven milestones. Manual installation in Desktop, a complete real work, other platforms and multi-user use remain unverified.
+
+---
+
 ## 0.5.0 · 2026-11-22
 
 ### 中文

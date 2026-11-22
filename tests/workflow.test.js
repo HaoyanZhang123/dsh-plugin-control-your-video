@@ -11,7 +11,7 @@ const canvas = { width: 640, height: 360, fps: 24 };
 const shots = [{ id: 'S01', duration: 1, text: 'one' }, { id: 'S02', duration: 2, text: 'two' }];
 const spec = { canvas, shots };
 
-async function fixture(t) {
+async function fixture(t, extra = {}) {
   const root = await mkdtemp(join(tmpdir(), 'cyv-workflow-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, 'output'));
@@ -58,7 +58,7 @@ async function fixture(t) {
   const storeDependencies = { store, requestApproval, registerExternal,
     inspectPlan: () => ({ pass: true, shots: planShots.current }), validateSpec: value => value, render };
   const context = { agent: { session: { header: { id: 'root' } } }, callId: 'trusted-call', signal: new AbortController().signal };
-  let workflow = createWorkflow(storeDependencies);
+  let workflow = createWorkflow({ ...storeDependencies, ...extra });
   const projectKey = () => digestText(process.platform === 'win32' ? root.toLowerCase() : root);
   return {
     root, saved, questions, produced, externalCalls, context, planShots, projectKey,
@@ -69,7 +69,7 @@ async function fixture(t) {
       return new Promise(resolve => { onQuestion = resolve; });
     },
     setExternalDuration: value => { externalDuration = value; },
-    restart: () => { workflow = createWorkflow(storeDependencies); },
+    restart: () => { workflow = createWorkflow({ ...storeDependencies, ...extra }); },
   };
 }
 
@@ -503,4 +503,85 @@ test('media dispatch enforces model identity and cost before calling the adapter
   assert.equal(await executeOneMediaRequest({ providers: [provider], request: affordable, approved: affordable }), 1);
   await assert.rejects(executeOneMediaRequest({ providers: [provider], request: affordable, approved: affordable }), /approval/);
   assert.equal(calls, 1);
+});
+
+const mediaDeclaration = {
+  provider: 'fixture', model: 'model-a', purpose: '开场镜头的静帧', currency: 'USD', costLimit: 500,
+};
+
+test('approve_plan mints the media grant from the same approval and shows it to the user', async t => {
+  const minted = [];
+  const f = await fixture(t, {
+    mintPlanMedia: async payload => {
+      minted.push(payload);
+      return [{ approved: true, grantId: 'grant-1', planBound: true }];
+    },
+  });
+  await f.invoke('creative', { direction: 'Intent and constraints' });
+  await f.invoke('save_plan', { text: '# Complete plan\nAll shots.' });
+
+  const approved = await f.invoke('approve_plan', { spec, sampleShots: ['S01'], media: [mediaDeclaration] });
+  assert.equal(approved.approved, true);
+  assert.deepEqual(approved.media, [{ approved: true, grantId: 'grant-1', planBound: true }]);
+  assert.equal(minted.length, 1, '只铸造一次');
+  assert.equal(minted[0].planDigest, digestText('# Complete plan\nAll shots.'));
+  assert.equal(minted[0].receipt.questionId, f.questions.at(-1).id, '用的是同一条批准收据');
+  assert.equal(f.questions.length, 2, '创意 + 方案，没有第三个问题');
+
+  const detail = f.questions.at(-1).detail;
+  assert.match(detail, /fixture \/ model-a/, '用户要能看到型号');
+  assert.match(detail, /500 USD/, '用户要能看到上限');
+  assert.match(detail, /不上传文件/, '用户要能看到数据范围');
+
+  f.restart();
+  assert.equal((await f.invoke('status')).planState, 'approved');
+  assert.deepEqual(f.saved.get(f.projectKey()).plan.media, approved.media, '授权随方案存进记录');
+});
+
+test('the same plan and media scope reuse the approval; a changed ceiling asks again', async t => {
+  const minted = [];
+  const f = await fixture(t, {
+    mintPlanMedia: async payload => {
+      minted.push(payload);
+      return [{ grantId: `grant-${minted.length}` }];
+    },
+  });
+  await f.invoke('creative', { direction: 'Intent' });
+  await f.invoke('save_plan', { text: '# Plan\nOne body.' });
+
+  const first = await f.invoke('approve_plan', { spec, sampleShots: ['S01'], media: [mediaDeclaration] });
+  assert.equal(first.needsUser, true);
+
+  const again = await f.invoke('approve_plan', { spec, sampleShots: ['S01'], media: [mediaDeclaration] });
+  assert.equal(again.reused, true);
+  assert.deepEqual(again.media, first.media);
+  assert.equal(minted.length, 1, '同一范围不再问、也不再铸造');
+
+  const raised = await f.invoke('approve_plan', { spec, sampleShots: ['S01'],
+    media: [{ ...mediaDeclaration, costLimit: 900 }] });
+  assert.equal(raised.needsUser, true, '改了上限就是新的批准范围');
+  assert.equal(minted.length, 2);
+  assert.match(f.questions.at(-1).detail, /900 USD/);
+});
+
+test('malformed or unsupported media declarations fail before the user is asked', async t => {
+  const f = await fixture(t);
+  await f.invoke('creative', { direction: 'Intent' });
+  await f.invoke('save_plan', { text: '# Plan\nBody.' });
+  const asked = f.questions.length;
+
+  await assert.rejects(
+    () => f.invoke('approve_plan', { spec, sampleShots: ['S01'], media: [{ provider: 'fixture' }] }),
+    /media\[0\]\.model/);
+  await assert.rejects(
+    () => f.invoke('approve_plan', { spec, sampleShots: ['S01'], media: [{ ...mediaDeclaration, currency: 'usd' }] }),
+    /currency/);
+  await assert.rejects(
+    () => f.invoke('approve_plan', { spec, sampleShots: ['S01'], media: [{ ...mediaDeclaration, costLimit: 1.5 }] }),
+    /costLimit/);
+  assert.equal(f.questions.length, asked, '形状错误不该走到用户面前');
+
+  await assert.rejects(
+    () => f.invoke('approve_plan', { spec, sampleShots: ['S01'], media: [mediaDeclaration] }),
+    /媒体授权服务/, '宿主没接授权服务时不能假装批准了模型用法');
 });
