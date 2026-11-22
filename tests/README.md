@@ -37,19 +37,22 @@
 
 ## 索引
 
-| 文件 | 测什么 |
-|---|---|
-| `video-intent.md` | 感觉词怎么翻、什么时候不该问、改口径时是补充还是覆盖 |
-| `video-plan.md` | 该不该出方案、时长反推、参考借什么、修改单回来怎么判 |
-| `video-script.md` | 要不要写台词、why/how、接缝、文章转口播的容量问题 |
-| `video-visual.md` | 要不要重定系统、可读性门槛、封面钩子、3D 该不该上 |
-| `video-motion.md` | 像 PPT 的五种病因、什么时候不该动、效果库怎么借 |
-| `video-prompting.md` | 任务类型判断、参考各控制什么、链条锁死时怎么办 |
-| `video-code-visual.md` | 该不该用代码画、时间来源定死、字体回退 |
-| `video-edit.md` | 转场语义层、拖的两种根因、字幕双约束、重定时顺序 |
-| `video-sound.md` | 声音承担什么、四条路线、局部重配、卡点误差归因 |
-| `video-review.md` | 有没有可看的输入、问题能不能取证、旧证据对照 |
-| `video-release.md` | 四类"能不能"分开判、三法域不能互搬、生物特征 |
-| `video-library.md` | 该不该入库、偏好与方法的分界、删除 |
-| `video-skill-authoring.md` | 该不该做成 Skill、写在哪一层、怎么验证 |
-| `plan-check.md` | `plan-check` 门禁的用法、必测红项与已知局限（附两个固定样本） |
+一份 Skill 可能对应多个用例文件（知识族拆成了几个侧面）。**一个用例文件一次测完**，新开会话，不点名技能。
+
+| 文件 | 测哪个入口 | 测什么 |
+|---|---|---|
+| `video-craft-judgment.md` | `video-craft` §8—§9 | **跨域分诊、审美判断六件、数值按用途分家、用户目标压过规则、无旁白缺口** |
+| `video-craft-visual.md` | `video-craft` §3 | 要不要重定系统、可读性门槛、封面钩子、3D 该不该上 |
+| `video-craft-motion.md` | `video-craft` §4 | 像 PPT 的六种病因、什么时候不该动、缓动条件、效果库怎么借 |
+| `video-craft-sound.md` | `video-craft` §5 | 声音承担什么、四条路线、局部重配、卡点误差归因、达标≠听感 |
+| `video-craft-edit.md` | `video-craft` §6—§7 | 转场语义层、拖的两种根因、字幕双约束、重定时顺序 |
+| `video-craft-script.md` | `video-craft` §2 | 要不要写台词、why/how、接缝、容量问题、数字保真 |
+| `video-types-code.md` | `video-types` §3 | 该不该用代码画、时间来源定死、字体回退 |
+| `video-types-generative.md` | `video-types` §6 | 任务类型判断、参考各控制什么、链条锁死时怎么办 |
+| `video-intent.md` | `video-intent` | 感觉词怎么翻、什么时候不该问、改口径时是补充还是覆盖 |
+| `video-plan.md` | `video-plan` | 该不该出方案、时长反推、参考借什么、修改单回来怎么判 |
+| `video-review.md` | `video-review` | 有没有可看的输入、**审美问题怎么拆并给判断**、旧证据对照、没听辨怎么报 |
+| `video-release.md` | `video-release` | 四类"能不能"分开判、三法域不能互搬、生物特征、时效标注 |
+| `video-library.md` | `video-library` | 该不该入库、偏好与方法的分界、三种资产不混 |
+| `video-skill-authoring.md` | `video-skill-authoring` | 该不该做成 Skill、写在哪一层、怎么验证 |
+| `plan-check.md` | （工具） | `plan-check` 门禁的用法、必测红项与已知局限（附两个固定样本） |
